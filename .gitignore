@@ -26,3 +26,4 @@ build/
 # Local backup / superseded kit version, not tracked
 _old/
 fantacalcio-project-kit-completo.zip
+.claude/scheduled_tasks.lock

@@ -107,3 +107,14 @@ La decisione approvata più recente e applicabile prevale. Appendere; non riscri
 - Rationale: entrambe le fonti sono gratuite, senza autenticazione, con licenza/ToS compatibili con l'uso previsto; l'audit del campione 2025/26 (380 partite ciascuna) mostra 0% missing sui campi chiave e 100% di match rate incrociato sulle partite con identità squadra risolta.
 - Conseguenze: `docs/SOURCE_REGISTER.md` aggiornato con stato verificato; pipeline di ingestion (`src/fantacalcio/ingest/`) e report riproducibile (`scripts/run_m1_audit.py` → `data/outputs/m1_data_quality_report.md`) disponibili. M1 resta aperto per la parte lineup/minuti/eventi e per l'entity resolution completa (6/20 squadre in coda di revisione manuale, vedi `data/identity/team_review_queue.json`).
 - Approvato da: project owner
+
+### ADR-2026-010 — Provider lineup/minuti/eventi: API-Football primario (futuro, a pagamento), StatsBomb come benchmark
+
+- Data: 2026-08-10
+- Stato: approved
+- Supersedes: parte "lineup/minuti/eventi" di ADR-2026-009 (che la lasciava bloccata)
+- Scope: data
+- Decisione: **API-Football** è il candidato primario per lineup/minuti/eventi player-level, da attivare su piano a pagamento quando si vorrà coprire la stagione corrente (piano gratuito verificato: 100 richieste/giorno + rate limit per-minuto più stretto, stagioni disponibili solo 2022-2024). **StatsBomb Open Data** resta un benchmark di validazione permanente e gratuito (nessun account, nessun rate limit, ma copertura Serie A ferma al 2015/16) — non un provider di produzione. **Sportmonks è escluso**: il piano gratuito non include la Serie A, nessuna base per preferirlo ad API-Football finché non si valuta un piano a pagamento head-to-head.
+- Rationale: audit comparativo eseguito con campioni reali (API-Football stagione 2023, 380 fixture + 30 partite di profondità; StatsBomb stagione 2015/16, 380 partite + 15 di profondità), entrambi validati contro football-data.co.uk sulla stessa stagione con 100% match rate. Nessuna criticità di qualità dati emersa su nessuno dei due; il fattore decisivo è la copertura di lega/stagione, non la qualità dei dati in sé.
+- Conseguenze: `docs/SOURCE_REGISTER.md` aggiornato; report completo in `data/outputs/m1_provider_audit_report.md`; `src/fantacalcio/ingest/{api_football,statsbomb}.py` disponibili e testati. Attivazione in produzione di API-Football rimandata a quando si approva il piano a pagamento — nessun'azione ulteriore richiesta per sbloccare M2 (baseline predittive), che può usare StatsBomb come dataset di validazione nel frattempo.
+- Approvato da: project owner

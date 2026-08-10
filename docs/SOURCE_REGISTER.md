@@ -6,15 +6,15 @@ Stato verifiche riportato dal research design al 10 agosto 2026. Prima dell’us
 |---|---|---|---|
 | File admin | regolamento, liste, offerte, assegnazioni, crediti, rose | import manuale; autorità per pool/asta | primario |
 | Export Fantacalcio posseduti + archivi community | voto, bonus, ruoli, quotazioni | solo import manuale; niente scraper/private endpoint; tier e provenienza | target privato condizionato |
-| Sportmonks | lineup, minuti, eventi, infortuni, quote/xG add-on | API commerciale/trial; audit ≥100 partite | candidato primario |
-| API-Football | stessi feed principali | API free/commerciale; challenger sullo stesso campione | candidato challenger |
+| Sportmonks | lineup, minuti, eventi, infortuni, quote/xG add-on | API commerciale/trial | **verificato 2026-08-10**: piano gratuito ("Football Free Plan", 3000 req/h) attivo ma **non include la Serie A** (solo poche leghe minori, es. Superliga danese, Premiership scozzese) — la ricerca `leagues/search/Serie A` non restituisce risultati. Serve upgrade a pagamento per l'Italia; nessun audit sul campione possibile finché non approvato. |
+| API-Football | stessi feed principali | API free/commerciale | **verificato 2026-08-10**: piano gratuito attivo, 100 richieste/giorno + rate limit per-minuto più stretto (429 osservato a sole 10 chiamate senza spaziatura; throttling a ~1 chiamata/7s applicato in `src/fantacalcio/ingest/api_football.py`), stagioni disponibili limitate a 2022-2024 (stagione corrente richiede piano a pagamento). Audit completo su campione 2023 (380 fixture, 100% match rate e 30 partite di profondità lineup/eventi) in `data/outputs/m1_provider_audit_report.md`. |
 | Big Balls Sports Data | lineup/eventi/statistiche/xG se disponibile | provider nuovo; audit storico, granularità e contratto | candidato sperimentale |
 | Understat | xG, npxG, xA, tiri, minuti | MVP privato con cache/rate limit; non dipendenza irremovibile | ammesso con cautela |
 | football-data.co.uk | risultati, statistiche match, quote storiche | CSV scaricabili, automazione permessa (no ToS restrittivo su questo uso) | **verificato 2026-08-10**: ingerito campione stagione 2025/26 (380 righe), 0% missing su colonne chiave, snapshot raw con checksum in `data/raw/football_data_co_uk/`. Vedi `data/outputs/m1_data_quality_report.md`. |
 | OpenFootball Italy | fixture/risultati e riconciliazione | CC0, automazione permessa | **verificato 2026-08-10**: ingerito campione stagione 2025-26 (380 righe) da `openfootball/football.json`, 0% missing sui campi chiave. Schema del campo `score` non uniforme (dict con `ft`, lista bare, o null per match non giocati) — gestito esplicitamente nel parser. Vedi `data/outputs/m1_data_quality_report.md`. |
 | football-data.org | fixture, risultati, classifiche | API documentata/free | fallback |
 | ClubElo | rating/benchmark | fonte di confronto; preferire Elo interno riproducibile | benchmark |
-| StatsBomb Open Data | eventi/lineup/xG storici | open data con attribuzione | R&D |
+| StatsBomb Open Data | eventi/lineup/xG storici | open data con attribuzione, nessun account, nessun rate limit | **verificato 2026-08-10**: Serie A 2015/16 disponibile per intero (380 partite), 100% match rate e 100% score agreement contro football-data.co.uk stessa stagione; profondità evento (titolari, sostituzioni, cartellini, rigori) confermata su 15 partite campione. Nessuna copertura stagione corrente — resta R&D/benchmark, non provider live. Vedi `data/outputs/m1_provider_audit_report.md`. |
 | Wyscout public dataset | eventi Serie A 2017/18 | dataset accademico | R&D |
 | Wikidata | alias, nascita, nazionalità, ID | CC0; supporto crosswalk | identity support |
 | Open-Meteo | meteo | opzionale, solo con beneficio OOS | opzionale |
@@ -43,12 +43,8 @@ Campione identico di almeno 100 partite; copertura di match/giocatori/campi; con
 
 Per ogni fonte aggiunta compilare: URL/provider, campi, ufficialità, metodo accesso, permesso automazione, evidenza licenza/ToS, data verifica, refresh, raw snapshot, ID, fallback, coverage, errori osservati e stato.
 
-## Stato dell'audit provider lineup/minuti/eventi (M1)
+## Stato dell'audit provider lineup/minuti/eventi (M1) — completato 2026-08-10
 
-Sportmonks e API-Football restano `candidato primario`/`candidato challenger`, non ancora auditati: entrambi richiedono la creazione di un account/trial, azione che un agente automatico non può eseguire (vedi `docs/DECISIONS.md`, categoria azioni vietate). Per sbloccare l'audit comparativo su ≥100 partite richiesto da `docs/ROADMAP.md` M1:
+Audit eseguito su API-Football (campione reale, stagione 2023) e StatsBomb Open Data (campione reale, stagione 2015/16), entrambi validati contro football-data.co.uk sulla stessa stagione. Sportmonks escluso: il piano gratuito non copre la Serie A, nessun campione possibile senza upgrade a pagamento. Report completo e raccomandazione primario/fallback in `data/outputs/m1_provider_audit_report.md` e ADR-2026-010.
 
-1. Creare un account trial Sportmonks e un account API-Football (il tier gratuito è sufficiente per l'audit).
-2. Fornire le due chiavi come variabili d'ambiente, mai committate: `SPORTMONKS_API_KEY`, `API_FOOTBALL_KEY`.
-3. Riaprire `docs/CURRENT_TASK.md` per la parte restante di M1.
-
-StatsBomb Open Data e Wyscout public dataset non richiedono account ma restano fuori da questo giro di audit (tier R&D, non prioritari per il campione player-match iniziale); da valutare in un secondo momento con licenza verificata.
+Wyscout public dataset non è stato ancora auditato (non richiede account, rimane candidato R&D per un giro successivo se serve un secondo benchmark storico).
