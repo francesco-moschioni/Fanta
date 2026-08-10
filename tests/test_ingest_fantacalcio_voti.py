@@ -79,6 +79,16 @@ class TestParseVotiFile:
         with pytest.raises(VotiParseError, match="not found"):
             parse_voti_file(tmp_path / "missing.xlsx")
 
+    def test_dash_voto_means_no_vote_not_an_error(self, tmp_path):
+        path = tmp_path / "Voti_Fantacalcio_Stagione_2025_26_Giornata_1.xlsx"
+        _write_synthetic_voti_xlsx(path, voto_giornata_1="-")
+        staged = parse_voti_file(path)
+
+        sportiello = staged.frame[staged.frame["player_code"] == 4]
+        assert sportiello["voto_no_vote"].all()
+        assert sportiello["voto"].isna().all()
+        assert not sportiello["voto_provisional"].any()
+
     def test_unparseable_voto_raises(self, tmp_path):
         path = tmp_path / "Voti_Fantacalcio_Stagione_2025_26_Giornata_1.xlsx"
         _write_synthetic_voti_xlsx(path, voto_giornata_1="SV")  # senza voto, not numeric

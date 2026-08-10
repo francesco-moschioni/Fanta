@@ -113,15 +113,19 @@ def parse_voti_file(path: str | Path, season_label: str | None = None, matchday:
         # positions, since team roster sizes vary.
         players = raw[pd.to_numeric(raw["Cod."], errors="coerce").notna()].copy()
 
-        players["voto_provisional"] = players["Voto"].astype(str).str.strip().str.endswith("*")
-        players["voto"] = pd.to_numeric(
-            players["Voto"].astype(str).str.rstrip("*").str.strip(), errors="coerce"
-        )
-        unparsed_voto = players[players["Voto"].notna() & players["voto"].isna()]
+        voto_str = players["Voto"].astype(str).str.strip()
+        # '-' means the player was not rated this matchday (didn't play / excluded from
+        # the panel), a real domain value distinct from a missing/malformed cell.
+        players["voto_no_vote"] = voto_str == "-"
+        players["voto_provisional"] = voto_str.str.endswith("*")
+        players["voto"] = pd.to_numeric(voto_str.str.rstrip("*").str.strip(), errors="coerce")
+        unparsed_voto = players[
+            players["Voto"].notna() & players["voto"].isna() & ~players["voto_no_vote"]
+        ]
         if len(unparsed_voto) > 0:
             raise VotiParseError(
                 f"Sheet {panel!r} in {path} has {len(unparsed_voto)} 'Voto' values that "
-                f"are not numeric or numeric+'*': {unparsed_voto['Voto'].unique().tolist()}"
+                f"are not numeric, numeric+'*', or '-': {unparsed_voto['Voto'].unique().tolist()}"
             )
 
         for col in _NUMERIC_COLUMNS:
@@ -152,7 +156,7 @@ def parse_voti_file(path: str | Path, season_label: str | None = None, matchday:
         frames.append(
             players[
                 [
-                    "player_code", "role", "display_name", "voto", "voto_provisional",
+                    "player_code", "role", "display_name", "voto", "voto_provisional", "voto_no_vote",
                     "goals_scored", "goals_conceded", "penalties_saved", "penalties_missed",
                     "penalties_won", "own_goals", "yellow_cards", "red_cards", "assists",
                     "panel", "season_label", "matchday", "source_id", "source_file_hash",
