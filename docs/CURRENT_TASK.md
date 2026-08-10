@@ -2,26 +2,29 @@
 
 Compilare prima di ogni modifica significativa e mantenere lo scope a una singola unità verificabile.
 
-- Obiettivo: `TODO` — primo blocco M2 (Elo/Dixon-Coles) completato, vedi Progresso. Prossimo blocco da scoping: modello voto/minuti giocatore, ora possibile con le 5 stagioni di voti reali ingerite in M1.
-- Perché ora: `TODO`
-- In scope: `TODO`
-- Fuori scope: `TODO`
-- Documenti canonici da leggere: `TODO`
-- File/simboli probabilmente coinvolti: `TODO`
-- Criteri di accettazione: `TODO`
-- Comandi test/quality: `TODO`
-- Data cutoff/snapshot/`as_of`: `TODO o N/A`
-- Seed, se applicabile: `TODO`
-- Delegazione: vietata | Gemini per `TODO` | subagente `TODO` per `TODO`
-- Decisioni aperte/blocchi: `TODO`
+- Obiettivo: secondo blocco M2 — modello voto giocatore (stima gerarchica/shrinkage), validato walk-forward su 5 stagioni di voti reali.
+- Perché ora: Elo/Dixon-Coles (primo blocco M2) completato; abbiamo 5 stagioni di voti reali auditati da M1 (189k righe, 0% missingness sui campi chiave).
+- In scope:
+  - Panel giocatore-giornata dal pannello "Fantacalcio" (primario), escluse righe `ALL` (allenatore) e `voto_no_vote`.
+  - Stimatore a shrinkage (Empirical Bayes / James-Stein: media giocatore pesata verso media di ruolo in base al numero di osservazioni storiche) calcolato walk-forward, mai con dati futuri.
+  - Baseline obbligatorie: ultimo voto noto, media di ruolo, media stagionale non pesata.
+  - Metriche: MAE/RMSE, breakdown per ruolo.
+- Fuori scope (dichiarato esplicitamente, non un buco nascosto): **modello di partecipazione/minutaggio**. I file voti elencano solo i giocatori che hanno ricevuto un voto quella giornata, non l'intera rosa — non c'è modo di derivare "probabilità di essere schierato" da questi dati soli senza un riferimento rosa completo per giornata, che non abbiamo ancora. Da riprendere quando/se disponibile una fonte lineup completa (vedi M1: API-Football a pagamento, o listone rose).
+- Documenti canonici da leggere: `docs/ROADMAP.md` (gate M2), `docs/DATA_AND_MODELING.md`, `docs/SOURCE_REGISTER.md` (gerarchia campi voto).
+- File probabilmente coinvolti: `src/fantacalcio/modeling/player_voto.py`, `tests/test_modeling_player_voto.py`, `scripts/run_m2_player_voto_backtest.py`.
+- Criteri di accettazione:
+  1. Predizione walk-forward (mai dati futuri per un giocatore/ruolo).
+  2. Batte le baseline (ultimo voto, media ruolo, media stagionale) su MAE.
+  3. Breakdown per ruolo riportato, non un solo numero aggregato.
+  4. Riproducibile (nessuna componente stocastica, o seed fissato se introdotta).
+- Comandi test/quality: `pytest -q`; `python scripts/run_m2_player_voto_backtest.py`.
+- Data cutoff/snapshot/`as_of`: voti 2021/22-2025/26 già in `data/staged/fantacalcio_voti_manual/` (locale, non committato).
+- Seed: n/a per questo blocco (stimatore deterministico).
+- Delegazione: vietata (scelte statistiche del lead).
+- Decisioni aperte/blocchi: nessuno per lo scope sopra; il modello di partecipazione resta esplicitamente bloccato in attesa di dati lineup completi.
 
 ## Progresso
 
-- Stato: **blocco Elo/Dixon-Coles completato**.
-- Ultimo commit/stato verificato: sessione 2026-08-10, `pytest -q` → 98 passed.
-- Sintesi:
-  - Rolling-origin validation (`src/fantacalcio/modeling/validation.py`), leakage check esplicito, baseline naive obbligatorie.
-  - Elo sequenziale + modello probabilità esito fittato (`elo.py`); Dixon-Coles Poisson attacco/difesa con time-decay (`dixon_coles.py`, correzione tau dichiaratamente omessa per ora).
-  - Backtest su 5 stagioni reali (2021/22-2025/26): entrambi i modelli battono le baseline su ogni fold. Report in `data/outputs/m2_team_strength_backtest.md`. ADR-2026-011.
-  - Gestito esplicitamente il caso squadre neopromosse senza storico (fallback a forza media, tracciato non nascosto).
-- Prossima azione: aprire un nuovo `CURRENT_TASK.md` per il modello voto/minuti giocatore (prossimo blocco M2), usando le 5 stagioni di voti in `data/staged/fantacalcio_voti_manual/` come target.
+- Stato: not started
+- Ultimo commit/stato verificato: `cc97269`
+- Prossima azione: implementare `src/fantacalcio/modeling/player_voto.py`.
