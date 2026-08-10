@@ -118,3 +118,13 @@ La decisione approvata più recente e applicabile prevale. Appendere; non riscri
 - Rationale: audit comparativo eseguito con campioni reali (API-Football stagione 2023, 380 fixture + 30 partite di profondità; StatsBomb stagione 2015/16, 380 partite + 15 di profondità), entrambi validati contro football-data.co.uk sulla stessa stagione con 100% match rate. Nessuna criticità di qualità dati emersa su nessuno dei due; il fattore decisivo è la copertura di lega/stagione, non la qualità dei dati in sé.
 - Conseguenze: `docs/SOURCE_REGISTER.md` aggiornato; report completo in `data/outputs/m1_provider_audit_report.md`; `src/fantacalcio/ingest/{api_football,statsbomb}.py` disponibili e testati. Attivazione in produzione di API-Football rimandata a quando si approva il piano a pagamento — nessun'azione ulteriore richiesta per sbloccare M2 (baseline predittive), che può usare StatsBomb come dataset di validazione nel frattempo.
 - Approvato da: project owner
+
+### ADR-2026-011 — Modelli forza-squadra Elo e Dixon-Coles confermati come baseline M2
+
+- Data: 2026-08-10
+- Stato: approved
+- Scope: modeling
+- Decisione: adottare Elo sequenziale (rating diff + modello di probabilità esito fittato via log loss) e Dixon-Coles (Poisson attacco/difesa con time-decay, senza la correzione tau per i punteggi bassi — omissione dichiarata, non silenziosa) come modelli di forza-squadra per M2, entrambi validati rolling-origin su 5 stagioni (2021/22-2025/26) di football-data.co.uk.
+- Rationale: backtest su 4 fold espandenti mostra che entrambi i modelli battono le baseline naive (tasso esito costante, media gol) su ogni fold: log loss medio 1.087 (baseline) → 1.008 (Elo) / 1.010 (Dixon-Coles); MAE gol medio 0.935 (baseline) → 0.870 (Dixon-Coles).
+- Conseguenze: `src/fantacalcio/modeling/{validation,baselines,elo,dixon_coles}.py` disponibili e testati (98 test totali); report riproducibile in `data/outputs/m2_team_strength_backtest.md`. Squadre neopromosse senza storico ricevono forza media di default (flag `is_known_team`/colonna "unknown-team matches" nel report) — comportamento dichiarato, non un bug. Correzione tau di Dixon-Coles e time-decay tuning restano miglioramenti futuri, non bloccanti per procedere al blocco successivo di M2 (modello voto/minuti giocatore).
+- Approvato da: project owner
