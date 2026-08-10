@@ -22,7 +22,7 @@ Questi punti non vanno ricostruiti per analogia. Quando l’utente/admin decide,
 
 ## Tecnico
 
-- Stack backend/frontend/database e target di deployment/offline.
-- Provider principale giocatore-partita dopo audit comparativo.
+- Stack risolto: Python + DuckDB/SQLite + Streamlit (ADR-2026-008). Resta aperto solo se rivalutare un frontend dedicato dopo il gate M4.
+- Provider principale giocatore-partita dopo audit comparativo (blocca solo la parte M1 dell'audit provider, non M0).
 
 Ogni domanda ha scope locale: non bloccare task che non dipendono dalla risposta.

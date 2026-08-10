@@ -87,3 +87,13 @@ La decisione approvata più recente e applicabile prevale. Appendere; non riscri
 - Rationale: pragmaticità dell’MVP senza confondere accessibilità e licenza.
 - Conseguenze: registry fonti, raw immutabile, moduli rimovibili e degradazione controllata.
 - Approvato da: project owner
+
+### ADR-2026-008 — Stack tecnico
+
+- Data: 2026-08-10
+- Stato: approved
+- Scope: architecture
+- Decisione: Python come linguaggio unico per engine deterministico, pipeline dati e modeling. Persistenza locale su DuckDB (analitica/features) + SQLite (stato transazionale: ledger, rose, sessioni) invece di un DB server. UI come app locale monoprocesso in Streamlit per l'MVP (P0/P1 di `UX_PRODUCT.md`); rivalutare un frontend dedicato (es. FastAPI + SPA) solo se il cockpit live richiede interattività che Streamlit non regge, con ADR successiva. Test con `pytest`. Ambiente gestito con `venv` + `pip-tools` o `uv`, senza servizi esterni per la modalità offline-capable.
+- Rationale: locale-first e riproducibilità richiedono la minima superficie di infrastruttura; un solo linguaggio evita adapter tra motore e modello statistico; DuckDB è adatto ad analisi colonnari su snapshot immutabili, SQLite è adatto a scritture transazionali frequenti del ledger d'asta live.
+- Conseguenze: `docs/PROJECT_SPEC.md` e `docs/OPEN_QUESTIONS.md` aggiornati; M0 di `docs/ROADMAP.md` può iniziare; import/export restano JSON/CSV come già specificato in `UX_PRODUCT.md`.
+- Approvato da: project owner
