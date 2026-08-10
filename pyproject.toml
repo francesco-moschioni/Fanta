@@ -5,6 +5,7 @@ description = "Private, local-first decision-support engine for a fantasy-footba
 requires-python = ">=3.11"
 dependencies = [
     "pyyaml>=6",
+    "pandas>=2",
 ]
 
 [project.optional-dependencies]

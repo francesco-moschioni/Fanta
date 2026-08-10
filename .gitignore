@@ -6,6 +6,8 @@ secrets/
 credentials/
 cookies*.json
 data/raw/
+data/staged/
+data/curated/
 data/private/
 private_participants/
 

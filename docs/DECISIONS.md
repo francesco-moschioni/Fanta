@@ -97,3 +97,13 @@ La decisione approvata più recente e applicabile prevale. Appendere; non riscri
 - Rationale: locale-first e riproducibilità richiedono la minima superficie di infrastruttura; un solo linguaggio evita adapter tra motore e modello statistico; DuckDB è adatto ad analisi colonnari su snapshot immutabili, SQLite è adatto a scritture transazionali frequenti del ledger d'asta live.
 - Conseguenze: `docs/PROJECT_SPEC.md` e `docs/OPEN_QUESTIONS.md` aggiornati; M0 di `docs/ROADMAP.md` può iniziare; import/export restano JSON/CSV come già specificato in `UX_PRODUCT.md`.
 - Approvato da: project owner
+
+### ADR-2026-009 — Fonti calendario/risultati confermate per M1 (parziale)
+
+- Data: 2026-08-10
+- Stato: approved
+- Scope: data
+- Decisione: football-data.co.uk e OpenFootball (`openfootball/football.json`) sono confermate come fonti di produzione per calendario/risultati/quote storiche, con automazione permessa. Nessuna decisione ancora su lineup/minuti/eventi player-level (Sportmonks vs API-Football): quell'audit resta bloccato in attesa di account/trial, che l'agente non può creare autonomamente (vedi vincoli su creazione account).
+- Rationale: entrambe le fonti sono gratuite, senza autenticazione, con licenza/ToS compatibili con l'uso previsto; l'audit del campione 2025/26 (380 partite ciascuna) mostra 0% missing sui campi chiave e 100% di match rate incrociato sulle partite con identità squadra risolta.
+- Conseguenze: `docs/SOURCE_REGISTER.md` aggiornato con stato verificato; pipeline di ingestion (`src/fantacalcio/ingest/`) e report riproducibile (`scripts/run_m1_audit.py` → `data/outputs/m1_data_quality_report.md`) disponibili. M1 resta aperto per la parte lineup/minuti/eventi e per l'entity resolution completa (6/20 squadre in coda di revisione manuale, vedi `data/identity/team_review_queue.json`).
+- Approvato da: project owner

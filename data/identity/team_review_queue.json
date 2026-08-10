@@ -1,0 +1,50 @@
+[
+  {
+    "matched_source_id": "openfootball",
+    "matched_name": "ACF Fiorentina",
+    "best_candidate_team_id": "fiorentina",
+    "best_candidate_name": "Fiorentina",
+    "confidence": 0.8333,
+    "reason": "Below auto-accept threshold (0.9)"
+  },
+  {
+    "matched_source_id": "openfootball",
+    "matched_name": "AS Roma",
+    "best_candidate_team_id": "roma",
+    "best_candidate_name": "Roma",
+    "confidence": 0.7273,
+    "reason": "Below auto-accept threshold (0.9)"
+  },
+  {
+    "matched_source_id": "openfootball",
+    "matched_name": "Atalanta BC",
+    "best_candidate_team_id": "atalanta",
+    "best_candidate_name": "Atalanta",
+    "confidence": 0.8421,
+    "reason": "Below auto-accept threshold (0.9)"
+  },
+  {
+    "matched_source_id": "openfootball",
+    "matched_name": "FC Internazionale Milano",
+    "best_candidate_team_id": "inter",
+    "best_candidate_name": "Inter",
+    "confidence": 0.3846,
+    "reason": "Below auto-accept threshold (0.9)"
+  },
+  {
+    "matched_source_id": "openfootball",
+    "matched_name": "Hellas Verona FC",
+    "best_candidate_team_id": "verona",
+    "best_candidate_name": "Verona",
+    "confidence": 0.6316,
+    "reason": "Below auto-accept threshold (0.9)"
+  },
+  {
+    "matched_source_id": "openfootball",
+    "matched_name": "SS Lazio",
+    "best_candidate_team_id": "lazio",
+    "best_candidate_name": "Lazio",
+    "confidence": 0.7692,
+    "reason": "Below auto-accept threshold (0.9)"
+  }
+]

@@ -1,0 +1,142 @@
+[
+  {
+    "team_id": "milan",
+    "canonical_source_id": "football_data_co_uk",
+    "canonical_name": "Milan",
+    "matched_source_id": "openfootball",
+    "matched_name": "AC Milan",
+    "confidence": 1.0,
+    "match_method": "exact_normalized",
+    "status": "confirmed"
+  },
+  {
+    "team_id": "pisa",
+    "canonical_source_id": "football_data_co_uk",
+    "canonical_name": "Pisa",
+    "matched_source_id": "openfootball",
+    "matched_name": "AC Pisa 1909",
+    "confidence": 1.0,
+    "match_method": "exact_normalized",
+    "status": "confirmed"
+  },
+  {
+    "team_id": "bologna",
+    "canonical_source_id": "football_data_co_uk",
+    "canonical_name": "Bologna",
+    "matched_source_id": "openfootball",
+    "matched_name": "Bologna FC 1909",
+    "confidence": 1.0,
+    "match_method": "exact_normalized",
+    "status": "confirmed"
+  },
+  {
+    "team_id": "cagliari",
+    "canonical_source_id": "football_data_co_uk",
+    "canonical_name": "Cagliari",
+    "matched_source_id": "openfootball",
+    "matched_name": "Cagliari Calcio",
+    "confidence": 1.0,
+    "match_method": "exact_normalized",
+    "status": "confirmed"
+  },
+  {
+    "team_id": "como",
+    "canonical_source_id": "football_data_co_uk",
+    "canonical_name": "Como",
+    "matched_source_id": "openfootball",
+    "matched_name": "Como 1907",
+    "confidence": 1.0,
+    "match_method": "exact_normalized",
+    "status": "confirmed"
+  },
+  {
+    "team_id": "genoa",
+    "canonical_source_id": "football_data_co_uk",
+    "canonical_name": "Genoa",
+    "matched_source_id": "openfootball",
+    "matched_name": "Genoa CFC",
+    "confidence": 1.0,
+    "match_method": "exact_normalized",
+    "status": "confirmed"
+  },
+  {
+    "team_id": "juventus",
+    "canonical_source_id": "football_data_co_uk",
+    "canonical_name": "Juventus",
+    "matched_source_id": "openfootball",
+    "matched_name": "Juventus FC",
+    "confidence": 1.0,
+    "match_method": "exact_normalized",
+    "status": "confirmed"
+  },
+  {
+    "team_id": "parma",
+    "canonical_source_id": "football_data_co_uk",
+    "canonical_name": "Parma",
+    "matched_source_id": "openfootball",
+    "matched_name": "Parma Calcio 1913",
+    "confidence": 1.0,
+    "match_method": "exact_normalized",
+    "status": "confirmed"
+  },
+  {
+    "team_id": "napoli",
+    "canonical_source_id": "football_data_co_uk",
+    "canonical_name": "Napoli",
+    "matched_source_id": "openfootball",
+    "matched_name": "SSC Napoli",
+    "confidence": 1.0,
+    "match_method": "exact_normalized",
+    "status": "confirmed"
+  },
+  {
+    "team_id": "torino",
+    "canonical_source_id": "football_data_co_uk",
+    "canonical_name": "Torino",
+    "matched_source_id": "openfootball",
+    "matched_name": "Torino FC",
+    "confidence": 1.0,
+    "match_method": "exact_normalized",
+    "status": "confirmed"
+  },
+  {
+    "team_id": "cremonese",
+    "canonical_source_id": "football_data_co_uk",
+    "canonical_name": "Cremonese",
+    "matched_source_id": "openfootball",
+    "matched_name": "US Cremonese",
+    "confidence": 1.0,
+    "match_method": "exact_normalized",
+    "status": "confirmed"
+  },
+  {
+    "team_id": "lecce",
+    "canonical_source_id": "football_data_co_uk",
+    "canonical_name": "Lecce",
+    "matched_source_id": "openfootball",
+    "matched_name": "US Lecce",
+    "confidence": 1.0,
+    "match_method": "exact_normalized",
+    "status": "confirmed"
+  },
+  {
+    "team_id": "sassuolo",
+    "canonical_source_id": "football_data_co_uk",
+    "canonical_name": "Sassuolo",
+    "matched_source_id": "openfootball",
+    "matched_name": "US Sassuolo Calcio",
+    "confidence": 1.0,
+    "match_method": "exact_normalized",
+    "status": "confirmed"
+  },
+  {
+    "team_id": "udinese",
+    "canonical_source_id": "football_data_co_uk",
+    "canonical_name": "Udinese",
+    "matched_source_id": "openfootball",
+    "matched_name": "Udinese Calcio",
+    "confidence": 1.0,
+    "match_method": "exact_normalized",
+    "status": "confirmed"
+  }
+]
