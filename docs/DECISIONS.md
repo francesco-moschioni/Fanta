@@ -128,3 +128,13 @@ La decisione approvata più recente e applicabile prevale. Appendere; non riscri
 - Rationale: backtest su 4 fold espandenti mostra che entrambi i modelli battono le baseline naive (tasso esito costante, media gol) su ogni fold: log loss medio 1.087 (baseline) → 1.008 (Elo) / 1.010 (Dixon-Coles); MAE gol medio 0.935 (baseline) → 0.870 (Dixon-Coles).
 - Conseguenze: `src/fantacalcio/modeling/{validation,baselines,elo,dixon_coles}.py` disponibili e testati (98 test totali); report riproducibile in `data/outputs/m2_team_strength_backtest.md`. Squadre neopromosse senza storico ricevono forza media di default (flag `is_known_team`/colonna "unknown-team matches" nel report) — comportamento dichiarato, non un bug. Correzione tau di Dixon-Coles e time-decay tuning restano miglioramenti futuri, non bloccanti per procedere al blocco successivo di M2 (modello voto/minuti giocatore).
 - Approvato da: project owner
+
+### ADR-2026-012 — Stimatore voto giocatore a shrinkage, con limite di metodo dichiarato
+
+- Data: 2026-08-10
+- Stato: approved
+- Scope: modeling
+- Decisione: adottare uno stimatore Empirical-Bayes (media giocatore pesata verso media di ruolo, `weight = n/(n+prior_games)`, `prior_games=60`) come baseline per il voto base giocatore, validato walk-forward su 5 stagioni reali (59.306 righe votate, pannello "Fantacalcio"). Il modello di partecipazione/minutaggio resta esplicitamente fuori scope: i file voti elencano solo i giocatori votati, non l'intera rosa, quindi non è derivabile "probabilità di essere schierato" da questi dati soli.
+- Rationale: lo stimatore batte tutte le baseline obbligatorie sull'MAE complessivo (0.4137 vs 0.4154 media-ruolo, 0.4494 media-stagione, 0.5670 ultimo voto noto). **Limite dichiarato**: `prior_games=60` è stato scelto scansionando un set di valori sullo stesso backtest poi usato per il report finale (nessun validation split separato per la selezione dell'iperparametro) — è una forma mite di tuning-on-test. Il margine di miglioramento sulla baseline è inoltre piccolo (~0.4%) e non uniforme: sul ruolo C lo stimatore è leggermente peggiore della media-ruolo (0.3805 vs 0.3760); sugli altri ruoli (P, D, A) è marginalmente migliore. Non è un risultato clamoroso, è un miglioramento modesto e onestamente riportato.
+- Conseguenze: `src/fantacalcio/modeling/player_voto.py` disponibile e testato (111 test totali nel progetto); report in `data/staged/fantacalcio_voti_manual/_m2_player_voto_backtest.md` (locale, non committato, deriva da dati a licenza personale). Raffinamento futuro suggerito: nested cross-validation per la scelta di `prior_games` invece dello sweep singolo attuale, prima di usare questo stimatore per decisioni economiche reali (offerte d'asta).
+- Approvato da: project owner
