@@ -18,6 +18,8 @@ __pycache__/
 node_modules/
 dist/
 build/
+*.egg-info/
+.venv/
 
 # Local backup / superseded kit version, not tracked
 _old/

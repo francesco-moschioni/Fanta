@@ -28,6 +28,14 @@ Compilare prima di ogni modifica significativa e mantenere lo scope a una singol
 
 ## Progresso
 
-- Stato: not started
-- Ultimo commit/stato verificato: `e1dca16` (bootstrap kit v2)
-- Prossima azione: creare lo scaffold del progetto Python e il loader di `config/auction_rules.v1.yaml`.
+- Stato: **completato** — tutti i criteri di accettazione soddisfatti (vedi verifica sotto).
+- Ultimo commit/stato verificato: implementato in sessione 2026-08-10, `pytest -q` → 39 passed.
+- Verifica dei 5 criteri di accettazione:
+  1. Replay deterministico: `tests/test_domain_replay.py::test_replay_is_deterministic` + verifica manuale (stesso stato da doppio replay).
+  2. Budget conservato: `tests/test_domain_replay.py::test_budget_never_overspent`, `test_overspend_raises`; nessun saldo negativo per costruzione (`TeamRoundBudget.remaining`).
+  3. Blocchi invarianti: test dedicati per doppia assegnazione, pool non ammesso, ruolo incoerente col pool, quota ruolo superata, blocco portieri di dimensione errata/duplicato.
+  4. Rami bloccati fino ad ADR: `resolve_sealed_bid_round()` solleva `NotImplementedError` con riferimento esplicito a `docs/OPEN_QUESTIONS.md`; i campi `uncertain_historical_fields` restano non confermati (test `test_uncertain_fields_are_unconfirmed`).
+  5. Fixture demo: `fantacalcio.fixtures.generate_demo_events` genera un ledger valido per 20 squadre/4 round; import/export JSON verificato round-trip (`tests/test_ledger_io.py`) ed export CSV derivato.
+- File creati: `pyproject.toml`, `src/fantacalcio/{config,domain,ledger_io,fixtures}.py`, `tests/{conftest,test_config,test_domain_replay,test_ledger_io}.py`, ambiente `.venv` locale (non tracciato).
+- Note per M1: identità club reale non ancora modellata (placeholder `gk_block_identity`); ruolo per pool `remaining_players` (G3/G4) è dichiarato esplicitamente nell'evento, non derivato da un'anagrafica giocatore reale (arriverà con l'identity layer di M1). Il vincolo `require_future_slot_reserve` della config non è applicato dal replay (è descrittivo/storico, non un motore di raccomandazione) — resta da implementare nell'auction engine di M3.
+- Prossima azione: aprire un nuovo `CURRENT_TASK.md` per M1 (registry fonti, audit provider, entity resolver).
