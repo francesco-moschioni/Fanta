@@ -1,0 +1,10 @@
+.env
+.env.*
+**/secrets/**
+**/credentials/**
+**/*.pem
+**/*.key
+**/cookies*.json
+**/private_participants/**
+data/raw/**
+data/private/**

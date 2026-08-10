@@ -1,0 +1,24 @@
+# Secrets and private/local data
+.env
+.env.*
+!.env.example
+secrets/
+credentials/
+cookies*.json
+data/raw/
+data/private/
+private_participants/
+
+# Generated artifacts
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+node_modules/
+dist/
+build/
+
+# Local backup / superseded kit version, not tracked
+_old/
+fantacalcio-project-kit-completo.zip

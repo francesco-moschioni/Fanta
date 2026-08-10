@@ -1,0 +1,116 @@
+Competizioni:
+-Campionato
+-Coppa
+-Supercoppa
+Squadre partecipanti:
+20
+Moduli consentiti: 
+3-4-3
+3-5-2
+4-5-1
+4-4-2
+4-3-3
+5-4-1
+5-3-2
+5-2-3
+Composizione rose:
+Rose da 24 giocatori con
+-3 portieri (blocco di una sola squadra),
+-8 difensori
+-8 centrocampisti
+-5 attaccanti (4 se non dovessero essercene abbastanza)
+Regole Schieramento formazione:
+Timeout per inserire la formazione: 5 minuti prima dell'inizio della giornata. Se non inserita, entra quella della giornata precedente.
+No switch
+Contributo partecipazione:
+5€ a fantallenatore, 10€ totali (5 a testa) per le squadre formate da una coppia.
+Numero massimo sostituzioni: 5
+Se una squadra dovesse avere un numero inferiore a 11 di giocatori a voto, verrá applicato un bonus di 3,5 per ogni giocatore mancante a raggiungere 11
+Bonus e Malus:
+-Gol: +3
+-Assist: +1
+Gol subito: -1
+Porta inviolata: +1
+Rigore sbagliato: -3
+Autogol: -2
+Ammonito: -0,5
+Espulso: -1
+Gol del pareggio finale: +0,5
+Gol della vittoria finale: +1
+Contributo al gol (assist light): +0,5
+Fair play (0 ammoniti): +0,5
+Mi rifiuto di dare il bonus uomo partita, uno strumento in mano a quei mafiosi di Fantacalcio.it
+Fasce gol ogni 5 punti partendo da 66 (66,71,76,81)
+Modificatore difesa presente a partire da 6,25 con la difesa almeno a 4 difensori crescendo di 1 punto per ogni 0,25 di media (6=+0 ; 6,25=+1 ; 6,5=+2…)
+Presente bonus rendimento a partire da 9 giocatori con almeno voto 6:
+9 -> 0,5
+10 -> 1
+11 -> 1,5
+Presente bonus capitano di +1 a partire dal 6 e di +2 se prende almeno 7 e +3 se prende almeno 8. -1 se sotto il 5,5 di voto base
+Per chi gioca con un uomo in meno, riceve un bonus compensativo di 3,5 punti.
+Proposta: alzare il bonus a 4,5 punti e renderlo progressivo fino a un tetto di 5,5 dopo il terzo giocatore mancante
+INFORMAZIONI ASTA:
+L'asta di dividerá in tre fasi:
+-Prima fase: asta a busta chiusa tramite form: assegnati 11 giocatori a testa da liste delineate. (I 3 portieri, 3 top difensori, 3 top centrocampisti, 2 top attaccanti).
+La fase é divisa su due giorni. Il primo giorno si battono portieri e difensori mentre il secondo centrocampisti e attaccanti.
+-Seconda fase: asta a busta chiusa libera, fino a 6 giocatori assegnati liberamente. 2 giri previsti.
+-Terza fase: Completamento delle rose da parte dell'admin
+Prima fase: (fa riferimento allo scorso anno, potrebbe cambiare)
+Verranno assegnati:
+-3 portieri
+-3 Difensori
+-3 Centrocampisti
+-2 Attaccanti
+Vi verranno passate delle liste tramite google forms da 20 giocatori l'una.
+Nello specifico:
+-Lista 1: Blocco portieri
+-Lista 2: Top 20 difensori
+-Lista 3: Top 21-40 difensori
+-Lista 4: Top 41-60 difensori
+-Lista 5: Top 20 centrocampisti
+-Lista 6: Top 21-40 centrocampisti
+-Lista 7: Top 41-60 centrocampisti
+-Lista 8: Top 20 attaccanti
+-Lista 9: Top 21-40 attaccanti
+Ogni lista avrá 20 calciatori, con un'offerta minima fissata per ciascuno. Dovrete esprimere 6 preferenze per ciascuna lista ed una offerta per ciascuna preferenza.
+Esempio:
+Brigate Ebosse esprime le sue 5 preferenze nella lista 6 (top 20 attaccanti):
+-1° Scelta: Leao 67
+-2° Scelta: Kean 60
+-3° Scelta: Lukaku 70
+-4° Scelta: Piccoli 41
+-5° Scelta: Lautaro 75
+Democrazia Cristante esprime le sue 5 preferenze nella lista 6 (top 20 attaccanti):
+-1° Scelta: Leao 65
+-2° Scelta: Thuram 60
+-3° Scelta: David 70
+-4° Scelta: Lautaro 80
+-5° Scelta: Kean 55
+Soule Mani esprime le sue 5 preferenze nella lista 6 (top 20 attaccanti):
+-1° Scelta: Dovbyk 57
+-2° Scelta: Thuram 55
+-3° Scelta: David 60
+-4° Scelta: Soulé 35
+-5° Scelta: Krstovic 40
+Tumori&Tomori esprime le sue 5 preferenze nella lista 6 (top 20 attaccanti):
+-1° Scelta: Dovbyk 51
+-2° Scelta: Thuram 50
+-3° Scelta: Leao 60
+-4° Scelta: Piccoli 32
+-5° Scelta: Krstovic 41
+Esempio schermata:
+
+Con un budget limitato, l'offerta dovrebbe essere di qualche credito sopra l'offerta minima. Ma chi lo sa, un'offerta più bassa e avrete i crediti per un semi-top, una più alta e vi portate a casa il giocatore.
+Qualora nessuna delle 5 preferenze andasse a segno verrá assegnato un giocatore presente nella lista non assegnato, al prezzo minimo
+L'offerta é libera purché superiore al minimo necessario indicato.
+Raggrupperó le offerte e le preferenze in modo da assegnare un giocatore da ogni lista ad ogni squadra. In questo modo, tutte le squadre avranno un top attaccante, un top centrocampista e cosí via. Certo qualcuno portebbe acquistare Dimarco-Mctominay-Kean e qualcuno Estupinan-Ederson-Piccoli ma la differenza di prezzo avrá un impatto nelle due fasi successive
+Seconda fase:
+Verranno assegnati:
+Fino a 5 calciatori senza limiti di ruolo
+Assegnati i top 40 per ciascun ruolo, la seconda fase riguarderá tutti i rimanenti. É l'occasione per prendere qualche semi-top rimasto, qualche pupillo, qualche nome esotico, il sostituto di un top (importante tutelarsi!) oppure qualche colpetto in sconto.
+Offerta minima? La quotazione di ciascun calciatore.
+Il budget: quello avanzato dalla fase precedente. Decidete voi come spendere.
+Terza fase:
+Verranno assegnati:
+I calciatori rimanenti per completare le squadre. Saró io a distribuirli, il più equamente possibile, partendo dalle squadre che hanno avanzato più crediti alla fase precedente.
+Fine

@@ -1,0 +1,80 @@
+schema_version: 1
+ruleset_id: fantacalcio-asta-2026-v1
+status: working_current
+effective_from: 2026-08-10
+supersedes: historical-three-phase-regulation
+
+league:
+  teams: 20
+  currency: credits
+  roster:
+    total_players: 24
+    goalkeeper_block:
+      players: 3
+      same_club: true
+    defenders: 8
+    midfielders: 8
+    forwards: 5
+    forwards_fallback_if_supply_insufficient: 4
+  formations:
+    - "3-4-3"
+    - "3-5-2"
+    - "4-5-1"
+    - "4-4-2"
+    - "4-3-3"
+    - "5-4-1"
+    - "5-3-2"
+    - "5-2-3"
+
+auction:
+  list_states: [unknown, provisional, official]
+  official_pool_authority: admin_import
+  model_ranking_is_official_pool: false
+  rounds:
+    - id: G1
+      order: 1
+      mode: sealed_bid
+      budget_increment: 200
+      budget_available: "200"
+      pools:
+        - goalkeeper_blocks
+        - defenders_top_1_60
+    - id: G2
+      order: 2
+      mode: sealed_bid
+      budget_increment: 100
+      budget_available: "remaining_G1 + 100"
+      pools:
+        - midfielders_top_1_60
+        - forwards_top_1_40
+    - id: G3
+      order: 3
+      mode: open_auction
+      budget_increment: 40
+      budget_available: "remaining_G2 + 40"
+      pools:
+        - remaining_players
+    - id: G4
+      order: 4
+      mode: open_auction
+      budget_increment: 0
+      budget_available: "remaining_G3"
+      pools:
+        - remaining_players
+
+runtime_invariants:
+  require_versioned_config: true
+  require_replayable_event_ledger: true
+  require_budget_conservation: true
+  require_future_slot_reserve: true
+  prevent_duplicate_assignment: true
+  prevent_ineligible_pool_assignment: true
+  locked_players_are_hard_constraints: true
+  infeasibility_requires_explanation: true
+
+uncertain_historical_fields:
+  sealed_bid_preference_count: null
+  sealed_bid_tie_breaker: null
+  minimum_bid_source: null
+  automatic_fallback_assignment: null
+  note: "Define through an approved ADR before implementing these branches."

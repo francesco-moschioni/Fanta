@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(.env)",
+      "Read(.env.*)",
+      "Read(**/secrets/**)",
+      "Read(**/credentials/**)",
+      "Read(**/*.pem)",
+      "Read(**/*.key)",
+      "Read(**/cookies*.json)",
+      "Read(**/private_participants/**)",
+      "Edit(**/raw/**)",
+      "Write(**/raw/**)",
+      "Bash(curl *)",
+      "Bash(wget *)"
+    ],
+    "ask": [
+      "Bash(git push *)",
+      "Bash(git tag *)",
+      "Bash(pip install *)",
+      "Bash(npm install *)",
+      "Bash(npx *)"
+    ]
+  }
+}
