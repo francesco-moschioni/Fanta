@@ -4,6 +4,7 @@ from fantacalcio.config import ConfigError
 from fantacalcio.domain import (
     AssignmentEvent,
     AssignmentItem,
+    BudgetAdjustmentEvent,
     DomainError,
     Role,
     VoidEvent,
@@ -390,3 +391,95 @@ def test_round_budget_carryover_is_per_team_not_shared(ruleset):
     assert state.team("team-01").budgets["G1"].remaining == 10
     assert state.team("team-02").budgets["G1"].remaining == 150
     assert state.team("team-01").budgets["G2"].available == 110  # 10 + 100, own leftover
+
+
+def _bonus(**kwargs) -> BudgetAdjustmentEvent:
+    defaults = dict(ts="2026-01-01T00:00:00Z", author="admin")
+    defaults.update(kwargs)
+    return BudgetAdjustmentEvent(**defaults)
+
+
+def test_budget_adjustment_applied_before_any_assignment(ruleset):
+    events = [
+        _bonus(event_id="b1", round_id="G1", team_id="team-01", amount=3, reason="custom_logo_bonus"),
+        _assign(
+            event_id="e1", round_id="G1", team_id="team-01", pool_id="defenders_top_1_60",
+            role=Role.DEF, item=AssignmentItem(player_ids=("def-01",)), amount=200,
+        ),
+    ]
+    # G1 base budget is 200; +3 bonus means 203 can be spent without overspending.
+    state = replay(ruleset, events)
+    assert state.team("team-01").budgets["G1"].available == 203
+    assert state.team("team-01").budgets["G1"].spent == 200
+    assert state.team("team-01").budgets["G1"].remaining == 3
+
+
+def test_budget_adjustment_applied_after_an_assignment(ruleset):
+    events = [
+        _assign(
+            event_id="e1", round_id="G1", team_id="team-01", pool_id="defenders_top_1_60",
+            role=Role.DEF, item=AssignmentItem(player_ids=("def-01",)), amount=190,
+        ),
+        _bonus(event_id="b1", round_id="G1", team_id="team-01", amount=3, reason="custom_logo_bonus"),
+    ]
+    state = replay(ruleset, events)
+    assert state.team("team-01").budgets["G1"].available == 203
+    assert state.team("team-01").budgets["G1"].remaining == 13
+
+
+def test_budget_adjustment_propagates_to_next_round_via_remaining_chain(ruleset):
+    events = [
+        _bonus(event_id="b1", round_id="G1", team_id="team-01", amount=3, reason="custom_logo_bonus"),
+        _assign(
+            event_id="e1", round_id="G1", team_id="team-01", pool_id="defenders_top_1_60",
+            role=Role.DEF, item=AssignmentItem(player_ids=("def-01",)), amount=190,
+        ),
+        _assign(
+            event_id="e2", round_id="G2", team_id="team-01", pool_id="midfielders_top_1_60",
+            role=Role.MID, item=AssignmentItem(player_ids=("mid-01",)), amount=1,
+        ),
+    ]
+    state = replay(ruleset, events)
+    # G1 remaining = 203 - 190 = 13; G2 available = remaining_G1 + 100 = 113.
+    assert state.team("team-01").budgets["G1"].remaining == 13
+    assert state.team("team-01").budgets["G2"].available == 113
+
+
+def test_budget_adjustment_only_affects_its_own_team(ruleset):
+    events = [
+        _bonus(event_id="b1", round_id="G1", team_id="team-01", amount=3, reason="custom_logo_bonus"),
+        _assign(
+            event_id="e1", round_id="G1", team_id="team-02", pool_id="defenders_top_1_60",
+            role=Role.DEF, item=AssignmentItem(player_ids=("def-01",)), amount=1,
+        ),
+    ]
+    state = replay(ruleset, events)
+    assert state.team("team-01").budgets["G1"].available == 203
+    assert state.team("team-02").budgets["G1"].available == 200
+
+
+def test_budget_adjustment_unknown_round_raises(ruleset):
+    events = [_bonus(event_id="b1", round_id="G99", team_id="team-01", amount=3, reason="x")]
+    with pytest.raises(ConfigError, match="unknown round"):
+        replay(ruleset, events)
+
+
+def test_budget_adjustment_voidable_via_effective_events(ruleset):
+    events = [
+        _bonus(event_id="b1", round_id="G1", team_id="team-01", amount=3, reason="custom_logo_bonus"),
+        VoidEvent(event_id="v1", ts="2026-01-01T00:00:00Z", voids="b1", author="admin", reason="mistake"),
+    ]
+    effective = effective_events(events)
+    assert effective == []
+    state = replay(ruleset, effective)
+    assert state.team("team-01").budgets == {}
+
+
+def test_budget_adjustment_survives_effective_events_when_not_voided(ruleset):
+    events = [
+        _bonus(event_id="b1", round_id="G1", team_id="team-01", amount=3, reason="custom_logo_bonus"),
+    ]
+    effective = effective_events(events)
+    assert [e.event_id for e in effective] == ["b1"]
+    state = replay(ruleset, effective)
+    assert state.team("team-01").budgets["G1"].available == 203

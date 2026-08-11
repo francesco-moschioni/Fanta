@@ -79,7 +79,30 @@ class VoidEvent:
     reason: str
 
 
-Event = Union[AssignmentEvent, VoidEvent]
+@dataclass(frozen=True)
+class BudgetAdjustmentEvent:
+    """A per-team, per-round budget adjustment not tied to a player purchase --
+    e.g. the +3-credit custom-logo bonus (config `league.custom_logo_bonus_credits`,
+    admin postilla 2026-08-11). Generic on purpose: any future admin-granted
+    bonus/penalty with a free-text `reason` uses this same mechanism, not a new
+    event type per rule. `amount` may be negative (a penalty), though none is
+    known/requested as of this event's introduction.
+
+    Applied once, normally to the first round (G1): later rounds whose budget
+    expression references an earlier round's `remaining_*` (e.g. G2 =
+    "remaining_G1 + 100") pick up the adjustment automatically through that
+    chain -- no special-casing needed in `replay()` beyond G1 itself."""
+
+    event_id: str
+    ts: str
+    round_id: str
+    team_id: str
+    amount: int
+    reason: str
+    author: str
+
+
+Event = Union[AssignmentEvent, VoidEvent, BudgetAdjustmentEvent]
 
 
 @dataclass
@@ -183,6 +206,31 @@ def replay(ruleset: Ruleset, events: list[Event]) -> LeagueState:
             state.events_applied.append(event.event_id)
             continue
 
+        if isinstance(event, BudgetAdjustmentEvent):
+            round_ = round_by_id.get(event.round_id)
+            if round_ is None:
+                raise ConfigError(
+                    f"Event {event.event_id} references unknown round {event.round_id!r}"
+                )
+            if round_.order < last_round_order_seen:
+                raise DomainError(
+                    f"Event {event.event_id} is for round {event.round_id} (order {round_.order}) "
+                    "but a later round has already been processed; the ledger must be round-ordered"
+                )
+            last_round_order_seen = max(last_round_order_seen, round_.order)
+
+            team = state.team(event.team_id)
+            if round_.id not in team.budgets:
+                available = evaluate_budget_expr(
+                    round_.budget_available_expr, remaining_by_round_per_team.get(event.team_id, {})
+                )
+                team.budgets[round_.id] = TeamRoundBudget(available=available)
+            team.budgets[round_.id].available += event.amount
+
+            state.events_applied.append(event.event_id)
+            remaining_by_round_per_team.setdefault(event.team_id, {})[round_.id] = team.budgets[round_.id].remaining
+            continue
+
         if not isinstance(event, AssignmentEvent):
             raise DomainError(f"Unknown event type: {type(event)!r}")
 
@@ -277,10 +325,11 @@ def replay(ruleset: Ruleset, events: list[Event]) -> LeagueState:
     return state
 
 
-def effective_events(events: list[Event]) -> list[AssignmentEvent]:
-    """Returns only the AssignmentEvents still in force: voided events and events
-    superseded by a later correction are dropped, and VoidEvents themselves are
-    dropped (they're not assignments). Order is preserved.
+def effective_events(events: list[Event]) -> list[AssignmentEvent | BudgetAdjustmentEvent]:
+    """Returns only the AssignmentEvents/BudgetAdjustmentEvents still in force:
+    voided events and events superseded by a later correction are dropped, and
+    VoidEvents themselves are dropped (they're not assignments). Order is
+    preserved.
 
     `replay()` intentionally does NOT retroactively unwind a voided/corrected
     event's roster/budget effects (see test_domain_replay.py's
@@ -290,10 +339,12 @@ def effective_events(events: list[Event]) -> list[AssignmentEvent]:
     display, as opposed to the full audit trail `replay()` on the raw event list
     gives you.
 
-    A retained event whose `corrects` field pointed at a now-excluded event has
-    that field cleared: after filtering, its target no longer exists in this
-    view, and `replay()` requires `corrects` to reference an event actually
-    present in the sequence it's given. The returned list is round-ordered
+    A retained AssignmentEvent whose `corrects` field pointed at a now-excluded
+    event has that field cleared: after filtering, its target no longer exists
+    in this view, and `replay()` requires `corrects` to reference an event
+    actually present in the sequence it's given. BudgetAdjustmentEvent has no
+    `corrects` field (it's never itself a correction), so it passes through
+    unchanged apart from void-exclusion. The returned list is round-ordered
     (order preserved from `events`) and independently replayable."""
     voided_ids: set[str] = set()
     for event in events:
@@ -301,8 +352,12 @@ def effective_events(events: list[Event]) -> list[AssignmentEvent]:
             voided_ids.add(event.voids)
         elif isinstance(event, AssignmentEvent) and event.corrects is not None:
             voided_ids.add(event.corrects)
-    return [
-        replace(e, corrects=None) if e.corrects is not None else e
-        for e in events
-        if isinstance(e, AssignmentEvent) and e.event_id not in voided_ids
-    ]
+
+    result: list[AssignmentEvent | BudgetAdjustmentEvent] = []
+    for e in events:
+        if isinstance(e, VoidEvent) or e.event_id in voided_ids:
+            continue
+        if isinstance(e, AssignmentEvent) and e.corrects is not None:
+            e = replace(e, corrects=None)
+        result.append(e)
+    return result

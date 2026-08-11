@@ -11,7 +11,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from .domain import AssignmentEvent, AssignmentItem, Event, Role, VoidEvent
+from .domain import AssignmentEvent, AssignmentItem, BudgetAdjustmentEvent, Event, Role, VoidEvent
 
 
 class LedgerIOError(ValueError):
@@ -43,6 +43,17 @@ def event_to_dict(event: Event) -> dict[str, Any]:
             "author": event.author,
             "reason": event.reason,
         }
+    if isinstance(event, BudgetAdjustmentEvent):
+        return {
+            "type": "budget_adjustment",
+            "event_id": event.event_id,
+            "ts": event.ts,
+            "round_id": event.round_id,
+            "team_id": event.team_id,
+            "amount": event.amount,
+            "reason": event.reason,
+            "author": event.author,
+        }
     raise LedgerIOError(f"Unknown event type: {type(event)!r}")
 
 
@@ -73,6 +84,16 @@ def event_from_dict(d: dict[str, Any]) -> Event:
                 author=d["author"],
                 reason=d["reason"],
             )
+        if kind == "budget_adjustment":
+            return BudgetAdjustmentEvent(
+                event_id=d["event_id"],
+                ts=d["ts"],
+                round_id=d["round_id"],
+                team_id=d["team_id"],
+                amount=d["amount"],
+                reason=d["reason"],
+                author=d["author"],
+            )
     except KeyError as exc:
         raise LedgerIOError(f"Ledger event of type {kind!r} is missing field {exc}") from exc
     raise LedgerIOError(f"Unknown ledger event type: {kind!r}")
@@ -102,6 +123,8 @@ _CSV_FIELDS = ["team_id", "round_id", "pool_id", "role", "player_ids", "amount",
 
 def export_assignments_csv(events: list[Event], path: str | Path) -> None:
     """Export a flat snapshot of assignments with derived status (valid/corrected/voided).
+    BudgetAdjustmentEvents are not assignments and are skipped here -- out of
+    scope for this specific "who won what" view, not silently mishandled.
 
     Read-only derived view; re-importing this CSV is not supported because it cannot
     reconstruct correction/void relationships or replay order.
@@ -117,6 +140,8 @@ def export_assignments_csv(events: list[Event], path: str | Path) -> None:
             if e.corrects:
                 corrected.add(e.corrects)
             assignments.append(e)
+        elif isinstance(e, BudgetAdjustmentEvent):
+            continue
         else:
             raise LedgerIOError(f"Unknown event type: {type(e)!r}")
 

@@ -8,6 +8,11 @@ source: "Recap regole admin, WhatsApp 2026-08-11 (docs/archive/Recap_regole_asta
 league:
   teams: 20
   currency: credits
+  # Postilla admin, 2026-08-11: come lo scorso anno, +3 crediti a ogni squadra che
+  # imposta un'immagine/logo personalizzato invece dello stemma di stock Fantacalcio.
+  # Applicato per-squadra tramite BudgetAdjustmentEvent (src/fantacalcio/domain.py),
+  # non un letterale nel codice.
+  custom_logo_bonus_credits: 3
   roster:
     total_players: 24
     goalkeeper_block:

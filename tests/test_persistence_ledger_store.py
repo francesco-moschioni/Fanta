@@ -18,6 +18,7 @@ def _ruleset():
         status="working_current",
         effective_from="2026-01-01",
         teams=2,
+        custom_logo_bonus_credits=3,
         roster=RosterComposition(
             total_players=24, goalkeeper_block_size=3, goalkeeper_same_club=True,
             defenders=8, midfielders=8, forwards=5, forwards_fallback=4,

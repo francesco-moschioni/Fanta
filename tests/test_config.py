@@ -9,6 +9,7 @@ from fantacalcio.config import ConfigError, evaluate_budget_expr, load_ruleset
 def test_loads_real_ruleset(ruleset):
     assert ruleset.ruleset_id == "fantacalcio-asta-2026-v1"
     assert ruleset.teams == 20
+    assert ruleset.custom_logo_bonus_credits == 3
     assert [r.id for r in ruleset.rounds] == ["G1", "G2", "G3", "G4"]
     assert ruleset.rounds[0].mode == "sealed_bid_list"
     assert ruleset.rounds[2].mode == "sealed_bid_free"
@@ -46,6 +47,7 @@ def _minimal_valid_yaml(**overrides: str) -> str:
     effective_from: 2026-01-01
     league:
       teams: 2
+      custom_logo_bonus_credits: 3
       roster:
         total_players: 4
         goalkeeper_block:
@@ -84,6 +86,13 @@ def test_missing_required_field_raises(tmp_path):
     yaml_text = _minimal_valid_yaml().replace("ruleset_id: test\n", "")
     path = _write(tmp_path, yaml_text)
     with pytest.raises(ConfigError, match="ruleset_id"):
+        load_ruleset(path)
+
+
+def test_missing_custom_logo_bonus_credits_raises(tmp_path):
+    yaml_text = _minimal_valid_yaml().replace("  custom_logo_bonus_credits: 3\n", "")
+    path = _write(tmp_path, yaml_text)
+    with pytest.raises(ConfigError, match="custom_logo_bonus_credits"):
         load_ruleset(path)
 
 

@@ -2,10 +2,12 @@ import csv
 
 import pytest
 
-from fantacalcio.domain import replay
+from fantacalcio.domain import BudgetAdjustmentEvent, replay
 from fantacalcio.fixtures import generate_demo_events
 from fantacalcio.ledger_io import (
     LedgerIOError,
+    event_from_dict,
+    event_to_dict,
     export_assignments_csv,
     export_ledger_json,
     import_ledger_json,
@@ -64,3 +66,35 @@ def test_csv_export_reflects_status(ruleset, tmp_path):
     assert len(rows) == len(events)  # demo fixture has no void/correction events
     assert all(row["status"] == "valid" for row in rows)
     assert {row["team_id"] for row in rows} == {f"team-{i:02d}" for i in range(1, ruleset.teams + 1)}
+
+
+def _bonus_event() -> BudgetAdjustmentEvent:
+    return BudgetAdjustmentEvent(
+        event_id="b1", ts="2026-01-01T00:00:00Z", round_id="G1", team_id="team-01",
+        amount=3, reason="custom_logo_bonus", author="admin",
+    )
+
+
+def test_budget_adjustment_event_dict_roundtrip():
+    event = _bonus_event()
+    d = event_to_dict(event)
+    assert d["type"] == "budget_adjustment"
+    reconstructed = event_from_dict(d)
+    assert reconstructed == event
+
+
+def test_budget_adjustment_event_json_roundtrip(tmp_path):
+    events = [_bonus_event()]
+    path = tmp_path / "ledger.json"
+    export_ledger_json(events, path)
+    reimported = import_ledger_json(path)
+    assert reimported == events
+
+
+def test_csv_export_skips_budget_adjustment_events(ruleset, tmp_path):
+    events = generate_demo_events(ruleset) + [_bonus_event()]
+    path = tmp_path / "assignments.csv"
+    export_assignments_csv(events, path)
+    with path.open(encoding="utf-8") as fh:
+        rows = list(csv.DictReader(fh))
+    assert len(rows) == len(generate_demo_events(ruleset))  # bonus event excluded

@@ -17,7 +17,16 @@ import streamlit as st
 
 from fantacalcio.auction.bid_recommendation import VOTI_TO_DOMAIN_ROLE
 from fantacalcio.config import ConfigError, load_ruleset
-from fantacalcio.domain import AssignmentEvent, AssignmentItem, DomainError, Role, VoidEvent, replay
+from fantacalcio.domain import (
+    AssignmentEvent,
+    AssignmentItem,
+    BudgetAdjustmentEvent,
+    DomainError,
+    Role,
+    VoidEvent,
+    effective_events,
+    replay,
+)
 from fantacalcio.persistence.ledger_store import (
     append_event,
     connect as connect_ledger,
@@ -74,7 +83,13 @@ st.selectbox(
     help="Nessun nome reale di squadra/manager è ancora in repo — identificativi generici finché non arrivano.",
 )
 
+all_events = load_events(ledger_conn)
+active_events = effective_events(all_events)
 state = load_current_league_state(ledger_conn, ruleset)
+
+teams_with_logo_bonus = {
+    e.team_id for e in active_events if isinstance(e, BudgetAdjustmentEvent) and e.reason == "custom_logo_bonus"
+}
 
 st.subheader("Tabellone")
 rows = []
@@ -101,6 +116,7 @@ for team_id in TEAM_IDS:
             "D": f"{team.role_count(Role.DEF)}/{role_targets[Role.DEF]}",
             "C": f"{team.role_count(Role.MID)}/{role_targets[Role.MID]}",
             "A": f"{team.role_count(Role.FWD)}/{role_targets[Role.FWD]}",
+            "Bonus logo": "Sì" if team_id in teams_with_logo_bonus else "—",
         }
     )
 st.dataframe(
@@ -118,6 +134,9 @@ st.dataframe(
         "D": st.column_config.TextColumn(help="Difensori acquistati / slot totali di ruolo."),
         "C": st.column_config.TextColumn(help="Centrocampisti acquistati / slot totali di ruolo."),
         "A": st.column_config.TextColumn(help="Attaccanti acquistati / slot totali di ruolo."),
+        "Bonus logo": st.column_config.TextColumn(
+            help=f"+{ruleset.custom_logo_bonus_credits} crediti per logo/immagine personalizzata invece dello stemma di stock (postilla admin 2026-08-11), già incluso nel budget."
+        ),
     },
 )
 
@@ -177,16 +196,53 @@ if submitted:
                     st.rerun()
 
 st.divider()
+st.subheader("Bonus logo personalizzato")
+st.caption(
+    f"Postilla admin, 2026-08-11: +{ruleset.custom_logo_bonus_credits} crediti a ogni squadra che "
+    "imposta un'immagine/logo personalizzato invece dello stemma di stock Fantacalcio "
+    "(come lo scorso anno). Applicato al budget G1: si propaga automaticamente a "
+    "G2/G3/G4 tramite la catena `remaining_G1`, nessun'altra azione necessaria."
+)
+teams_without_bonus = [t for t in TEAM_IDS if t not in teams_with_logo_bonus]
+if not teams_without_bonus:
+    st.caption("Tutte le squadre hanno già ricevuto il bonus.")
+else:
+    with st.form("assign_logo_bonus"):
+        bonus_team = st.selectbox("Squadra", teams_without_bonus)
+        bonus_submitted = st.form_submit_button(f"Assegna +{ruleset.custom_logo_bonus_credits} crediti")
+    if bonus_submitted:
+        bonus_event = BudgetAdjustmentEvent(
+            event_id=uuid.uuid4().hex,
+            ts=datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
+            round_id="G1",
+            team_id=bonus_team,
+            amount=ruleset.custom_logo_bonus_credits,
+            reason="custom_logo_bonus",
+            author="utente",
+        )
+        try:
+            replay(ruleset, load_events(ledger_conn) + [bonus_event])
+        except (DomainError, ConfigError) as exc:
+            st.error(f"Evento non valido, non registrato: {exc}")
+        else:
+            append_event(ledger_conn, bonus_event)
+            st.success(f"Bonus assegnato a {bonus_team}: +{ruleset.custom_logo_bonus_credits} crediti.")
+            st.rerun()
+
+st.divider()
 st.subheader("Annulla un risultato (undo)")
 
-effective_assignments = [e for e in load_events(ledger_conn) if isinstance(e, AssignmentEvent)]
-voided_ids = {e.voids for e in load_events(ledger_conn) if isinstance(e, VoidEvent)}
-active = [e for e in effective_assignments if e.event_id not in voided_ids]
+active = [e for e in active_events if isinstance(e, (AssignmentEvent, BudgetAdjustmentEvent))]
 
 if not active:
     st.caption("Nessun evento attivo da annullare.")
 else:
-    options = {f"{e.team_id} — {e.item.player_ids} — {e.amount} crediti — {e.round_id} ({e.event_id[:8]})": e.event_id for e in active}
+    def _describe(e):
+        if isinstance(e, BudgetAdjustmentEvent):
+            return f"{e.team_id} — bonus {e.reason} +{e.amount} crediti — {e.round_id} ({e.event_id[:8]})"
+        return f"{e.team_id} — {e.item.player_ids} — {e.amount} crediti — {e.round_id} ({e.event_id[:8]})"
+
+    options = {_describe(e): e.event_id for e in active}
     with st.form("void_event"):
         selected_label = st.selectbox("Evento da annullare", list(options.keys()))
         reason = st.text_input("Motivo")
