@@ -2,23 +2,22 @@
 
 Compilare prima di ogni modifica significativa e mantenere lo scope a una singola unità verificabile.
 
-- Obiettivo: primo blocco M3 — valore sopra il replacement (VAR) per giocatore, usando le distribuzioni Monte Carlo (ADR-2026-018) e le quote di rosa reali da `config/auction_rules.v1.yaml`.
-- Perché ora: M2 è sostanzialmente completo; VAR è il concetto fondamentale che collega "quanto vale un giocatore in assoluto" a "quanto vale per la mia rosa", primo passo del layer forecast-to-bid richiesto da `docs/DATA_AND_MODELING.md`.
-- In scope:
-  - Livello di replacement per ruolo = fantavoto medio simulato del giocatore all'N-esimo posto per ruolo, dove N = slot totali di lega per quel ruolo (letto da config, non hardcoded: `8 difensori × 20 squadre = 160`, ecc.), applicato al roster 2026/27 reale.
-  - Valore sopra replacement = media simulata del giocatore − livello di replacement del suo ruolo.
-  - Propagare l'incertezza: VAR calcolato anche su P10/P90, non solo sulla media (mostrare un range, non un numero secco).
-- Fuori scope: scarsità dinamica durante l'asta (dipende da chi è già stato assegnato, serve il ledger vivo — blocco successivo), fit con la rosa dell'utente, budget shadow price, domanda avversari.
-- Documenti canonici: `docs/DATA_AND_MODELING.md` (forecast-to-bid layer), `config/auction_rules.v1.yaml` (quote rosa).
-- File probabilmente coinvolti: `src/fantacalcio/auction/replacement.py` (nuovo package), test, script.
-- Criteri di accettazione: quote di rosa lette dalla config, mai hardcoded; VAR con range di incertezza, non solo media; applicato al roster 2026/27 reale con risultati plausibili (i migliori per ruolo hanno VAR più alto, i giocatori mediocri vicino a zero).
-- Comandi test/quality: `pytest -q`.
-- Seed: eredita quello della simulazione Monte Carlo (42).
-- Delegazione: vietata.
-- Decisioni aperte/blocchi: nessuno per lo scope sopra.
+- Obiettivo: `TODO` — primo blocco M3 (valore sopra replacement) completato, vedi Progresso.
+- Perché ora: `TODO`
+- In scope: `TODO`
+- Fuori scope: `TODO`
+- Documenti canonici da leggere: `TODO`
+- File/simboli probabilmente coinvolti: `TODO`
+- Criteri di accettazione: `TODO`
+- Comandi test/quality: `TODO`
+- Data cutoff/snapshot/`as_of`: `TODO o N/A`
+- Seed, se applicabile: `TODO`
+- Delegazione: vietata | Gemini per `TODO` | subagente `TODO` per `TODO`
+- Decisioni aperte/blocchi: `TODO`
 
 ## Progresso
 
-- Stato: not started
-- Ultimo commit/stato verificato: `8a98a2d`
-- Prossima azione: implementare `src/fantacalcio/auction/replacement.py`.
+- Stato: **primo blocco M3 completato** (ADR-2026-019).
+- Ultimo commit/stato verificato: sessione 2026-08-11, `pytest -q` → 178 passed.
+- Sintesi: `src/fantacalcio/auction/replacement.py`, replacement level per ruolo da config (mai hardcoded), VAR con range di incertezza. Applicato al roster 2026/27 reale: trovata una carenza reale di attaccanti disponibili (88/100 slot, -12) e portieri (59/60, -1), segnalata esplicitamente invece di assorbita silenziosamente nel fallback. Risultati plausibili (Lautaro Martinez, Thuram in testa per VAR).
+- Prossima azione naturale: collegare il VAR ai 4 giri d'asta reali (pool G1-G4 da `config/auction_rules.v1.yaml`) per un vero "quanto offrire" per round; oppure fit con la rosa dell'utente (giocatori bloccati, moduli). Entrambi richiedono il ledger d'asta vivo (M0) collegato al valore (M2/M3) — il pezzo di integrazione finale.
