@@ -42,6 +42,9 @@ REQUIRED_COLUMNS = [
     "round_pool",
     "list_pool_name",
     "list_state",
+    "participation_rate",
+    "participation_season",
+    "participation_seasons_of_history",
 ]
 
 

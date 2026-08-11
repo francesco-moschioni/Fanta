@@ -211,6 +211,21 @@ st.markdown(f"**Round pool**: {player['round_pool']} ({player['list_pool_name']}
 st.markdown(f"**Qualità dati**: {TIER_LABELS.get(player['data_quality_tier'], player['data_quality_tier'])}")
 st.markdown(f"**Partite nello storico usate dal modello**: {int(player['player_games_in_pool'])}")
 
+participation_rate = pd.to_numeric(player.get("participation_rate"), errors="coerce")
+if pd.notna(participation_rate):
+    season = player.get("participation_season", "?")
+    n_seasons = player.get("participation_seasons_of_history")
+    st.markdown(
+        f"**Probabilità di voto (rischio SV), stima**: {participation_rate:.0%} — "
+        f"quota di giornate con voto nell'ultima stagione nota ({season}), "
+        f"{int(n_seasons) if pd.notna(n_seasons) else '?'} stagioni di storico disponibili. "
+        "Non una previsione di formazione titolare, solo la persistenza storica di essere schierato."
+    )
+else:
+    st.caption(
+        "Probabilità di voto (rischio SV): non disponibile, nessuna stagione storica per questo giocatore."
+    )
+
 drivers = []
 if player.get("used_fvm_prior"):
     drivers.append("Prior FVM usato (basso storico) — vedi ADR-2026-024")
@@ -307,8 +322,8 @@ else:
 
 with st.expander("Non ancora disponibile in questa vista"):
     st.write(
-        "- Probabilità di voto (rischio SV): non ancora esposta in questa tabella.\n"
-        "- Valore marginale per la propria rosa, compatibilità slot/moduli: richiedono "
-        "il costruttore rosa (fuori scope in questa slice).\n"
-        "- Confronto con fino a tre alternative: non ancora implementato."
+        "- Valore marginale per la propria rosa (aggiungendo proprio questo giocatore): "
+        "vedi invece la sezione **Rosa ideale** nella pagina Rosa, che ottimizza su tutta "
+        "la rosa insieme, non giocatore per giocatore.\n"
+        "- Compatibilità slot/moduli, confronto con fino a tre alternative: non ancora implementato."
     )

@@ -26,6 +26,8 @@ from fantacalcio.modeling.data_quality import (
     TIER_PARTIAL_HISTORY,
     add_data_quality_tier,
 )
+from fantacalcio.modeling.participation import compute_season_participation, latest_known_participation
+from fantacalcio.modeling.player_voto import load_player_matchday_panel
 
 MONTE_CARLO_CSV = Path("data/staged/fantacalcio_voti_manual/_monte_carlo_2026_27.csv")
 REPORT_PATH = Path("data/staged/fantacalcio_voti_manual/_m3_replacement_values.md")
@@ -41,6 +43,15 @@ def main() -> None:
     result = add_value_above_replacement(pool, levels)
     result = add_data_quality_tier(result)
     result = assign_round_pools(result, ruleset)
+
+    print("Computing latest known participation rate (probabilita di voto proxy)...")
+    voti = load_player_matchday_panel()
+    participation = compute_season_participation(voti)
+    latest_participation = latest_known_participation(participation)[
+        ["player_code", "participation_rate", "season_label", "seasons_of_history"]
+    ].rename(columns={"season_label": "participation_season", "seasons_of_history": "participation_seasons_of_history"})
+    result = result.merge(latest_participation, on="player_code", how="left")
+
     result = result.sort_values("var_mean", ascending=False)
     result.to_csv(CSV_PATH, index=False)
 
