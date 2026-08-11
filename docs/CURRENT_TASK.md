@@ -2,23 +2,23 @@
 
 Compilare prima di ogni modifica significativa e mantenere lo scope a una singola unità verificabile.
 
-- Obiettivo: 4 miglioramenti in sequenza, tutti usando dati già ingeriti (nessuna nuova fonte esterna): (1) collegare Dixon-Coles al Monte Carlo del voto, (2) usare FVM come prior secondario per giocatori a basso storico, (3) recuperare le quote scommesse da football-data.co.uk, (4) decadimento temporale nel bootstrap voto/partecipazione.
-- Perché ora: audit ha trovato che Dixon-Coles (validato, ADR-2026-011) non è mai riusato dal voto/Monte Carlo, e FVM/quote scommesse sono dati già presenti mai sfruttati.
-- In scope blocco 1: rating attacco/difesa per squadra da Dixon-Coles, confrontati contro il contesto-squadra storico medio del giocatore (pesato per partite), applicati come aggiustamento al campione Monte Carlo per ruoli offensivi (A/C, su rating attacco) e difensivi (D, su rating difesa — P escluso, già coperto da `team_goals_conceded`). Coefficiente di scala validato via walk-forward (stesso schema di `prior_games` in ADR-2026-012), non inventato.
-- Fuori scope: aggiustamento per P (già gestito diversamente), rimodellazione completa del bootstrap (resta un aggiustamento additivo post-hoc, non una riscrittura del meccanismo di campionamento).
-- Documenti canonici: ADR-2026-011 (Dixon-Coles), ADR-2026-012/018 (voto/Monte Carlo).
-- File probabilmente coinvolti: `src/fantacalcio/scoring/team_strength_adjustment.py`, test, script di validazione.
-- Criteri di accettazione: coefficiente scelto per validazione onesta (walk-forward), non arbitrario; nessun peggioramento della correlazione con `Fm` reale rispetto alla baseline senza aggiustamento, altrimenti scartato con la stessa onestà usata per il tentativo fallito su porta-inviolata-difensori (ADR-2026-017).
+- Obiettivo: M4 slice 1 — prima schermata UI, sola lettura: ricerca/filtri giocatori + scheda compatta (`docs/UX_PRODUCT.md`, priorità P0), su Streamlit + DuckDB (stack deciso in ADR-2026-008). Trasforma i CSV già prodotti (Monte Carlo, VAR, round pool, data quality tier) in una schermata effettivamente usabile prima dell'asta.
+- Perché ora: M0-M3 hanno gate soddisfatti (dominio, dati, baseline, motore VAR/max-bid); la regola di priorità di `docs/ROADMAP.md` blocca solo il modeling avanzato (M5) prima dei gate, non M4. Nessuna riga di UI esiste ancora nel repo.
+- In scope:
+  - Script di build che consolida `_m3_replacement_values.csv` (già include Monte Carlo + VAR + round pool + data quality tier) in una tabella DuckDB locale con colonna `as_of`/provenance esplicita (build timestamp, non finto "real-time").
+  - Pagina Streamlit "Giocatori": ricerca per nome, filtri per ruolo/squadra/round pool/data quality tier, tabella ordinata per VAR, scheda dettaglio per giocatore selezionato con i campi già disponibili da `docs/UX_PRODUCT.md`'s "Scheda giocatore": valore atteso (sim_mean), mediana/P10-P90, VAR, quotazione, tier di qualità dati, `player_games_in_pool`, flag `used_fvm_prior`/`team_strength_adjustment` come "driver" oggettivi, round pool e `list_state=provisional` badge esplicito (mai spacciato per lista ufficiale, ADR-2026-021).
+  - Campi esplicitamente NON disponibili in questa slice (offerta consigliata/massimo dinamico richiedono il ledger vivo, non ancora collegato all'UI; confronto a tre; costruttore rosa/lock) vanno mostrati come "non ancora disponibile", mai inventati o lasciati impliciti.
+- Fuori scope: costruttore rosa/campo grafico, cockpit live/ledger, lock, moduli, undo/autosave, apprendimento mercato — slice M4 successive. Nessuna scrittura all'utente (sola lettura).
+- Documenti canonici: `docs/UX_PRODUCT.md` (scheda giocatore, priorità P0), ADR-2026-008 (stack), ADR-2026-021 (list_state provisional).
+- File probabilmente coinvolti: `pyproject.toml` (dipendenze streamlit/duckdb), `src/fantacalcio/persistence/` (nuovo, layer dati DuckDB), `scripts/build_player_table.py` (nuovo), `app/Home.py` o `app/pages/*.py` (nuovo), test del data layer (non della UI Streamlit stessa, non praticamente unit-testabile).
+- Criteri di accettazione: build deterministico e riproducibile dai CSV già in `data/staged/`; nessun dato inventato per i campi non ancora disponibili; badge `list_state` sempre visibile; app avviata e verificata in browser (ricerca, filtri, scheda) prima di dichiarare fatto, per la regola di sessione sulle modifiche UI.
 - Comandi test/quality: `pytest -q`.
-- Seed: eredita 42.
+- Seed: eredita 42 dove applicabile (non rilevante per UI sola lettura).
 - Delegazione: vietata.
 - Decisioni aperte/blocchi: nessuno.
 
 ## Progresso
 
-- Stato: **sequenza dei 4 blocchi completata** (ADR-2026-023/024/025/026). Vedi ADR per dettagli; nessuna prossima azione pianificata su questo task.
-- Blocco 1: `src/fantacalcio/scoring/team_strength_adjustment.py`, k=0,5 validato via walk-forward, correlazione Fm 0,3472→0,3522. Integrato in `scripts/run_monte_carlo_fantavoto.py` parte B.
-- Blocco 2: `src/fantacalcio/scoring/fvm_prior.py`, pool per quartile FVM sostituisce il pool di ruolo piatto per giocatori con <10 partite storiche. Validato sul sotto-insieme mirato: correlazione Fm 0,3326→0,4048 (177 giocatori a basso storico). Integrato in parte B, 130/498 giocatori interessati.
-- Blocco 3: quote scommesse (`AvgH`/`AvgD`/`AvgA`) recuperate in `src/fantacalcio/ingest/football_data_co_uk.py` + `src/fantacalcio/modeling/market_odds.py`. Usate come cross-check a parità di stagione contro Dixon-Coles (correlazione media 0,9278/5 stagioni), **non** collegate alla pipeline 2026/27 (le quote per la prossima stagione non esistono ancora). Bug di provenance corretto in `src/fantacalcio/ingest/snapshot.py` (manifest condiviso tra snapshot nello stesso secondo).
-- Blocco 4: decadimento temporale testato su bootstrap Monte Carlo (`simulate_fantavoto(..., use_recency_weights=True)`) e su partecipazione multi-stagione (`decayed_participation_estimate`) — **entrambi non adottati**, nessun miglioramento onesto rispetto al baseline dopo controllo per artefatti (vedi ADR-2026-026). Infrastruttura resta nel codice come opt-in inutilizzato, non collegata alla pipeline reale.
-- 234 test totali passano.
+- Stato: **completato** (ADR-2026-027). Verificato in browser end-to-end (ricerca, filtri, scheda).
+- `src/fantacalcio/persistence/player_table.py` (data layer DuckDB + provenance), `scripts/build_player_table.py`, `app/Home.py`, `app/pages/1_Giocatori.py`. 245 test totali passano (11 nuovi).
+- Prossima azione (M4 slice 2, non ancora scoped in dettaglio): costruttore rosa visuale + lock, oppure collegamento del ledger vivo (SQLite) per abilitare offerta consigliata/massimo dinamico nella scheda giocatore — da scegliere e scopare come nuova unità quando si riprende M4.

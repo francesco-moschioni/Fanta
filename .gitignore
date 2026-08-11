@@ -9,6 +9,7 @@ data/raw/
 data/staged/
 data/curated/
 data/private/
+data/local/
 private_participants/
 
 # Generated artifacts
