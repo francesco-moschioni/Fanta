@@ -22,18 +22,32 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from fantacalcio.modeling.dixon_coles import fit_dixon_coles
 from fantacalcio.modeling.player_voto import load_player_matchday_panel
 from fantacalcio.modeling.team_matchday import build_all_seasons
 from fantacalcio.scoring.monte_carlo import DEFAULT_PRIOR_GAMES, build_event_pools, simulate_fantavoto
+from fantacalcio.scoring.team_strength_adjustment import (
+    apply_adjustment,
+    compute_adjustments,
+    historical_avg_team_rating,
+    team_ratings_from_model,
+)
 
 VALIDATION_REPORT_PATH = Path("data/staged/fantacalcio_voti_manual/_monte_carlo_validation.md")
 APPLICATION_CSV_PATH = Path("data/staged/fantacalcio_voti_manual/_monte_carlo_2026_27.csv")
 APPLICATION_REPORT_PATH = Path("data/staged/fantacalcio_voti_manual/_monte_carlo_2026_27.md")
 QUOTAZIONI_DIR = Path("data/staged/fantacalcio_quotazioni_manual")
 STATISTICHE_DIR = Path("data/staged/fantacalcio_statistiche_manual")
+FOOTBALL_DATA_DIR = Path("data/staged/football_data_co_uk")
+FD_SEASON_CODES = {"2021_22": "2122", "2022_23": "2223", "2023_24": "2324", "2024_25": "2425", "2025_26": "2526"}
 SEASONS = ["2021_22", "2022_23", "2023_24", "2024_25", "2025_26"]
 N_SIMS = 1000
 SEED = 42
+# Validated via scripts/run_team_strength_adjustment_validation.py walk-forward sweep
+# (2026-08-11): k=0.5 improved correlation with real Fm from 0.3472 to 0.3522 vs. k=0
+# baseline, with a monotonic 0->0.25->0.5 rise then a fall at k=1.0 -- a real, if
+# modest, signal rather than noise. See ADR-2026-023.
+TEAM_STRENGTH_K = 0.5
 
 
 def _join_team_data(voti: pd.DataFrame) -> pd.DataFrame:
@@ -113,9 +127,26 @@ def part_b_application(rated: pd.DataFrame) -> None:
     listone = pd.read_csv(QUOTAZIONI_DIR / "2026_27.csv")
     rng = np.random.default_rng(SEED)
 
+    print("Fitting Dixon-Coles on all seasons for team-strength adjustment (ADR-2026-023)...")
+    fd_all = pd.concat(
+        [pd.read_csv(FOOTBALL_DATA_DIR / f"serie_a_{FD_SEASON_CODES[s]}.csv", parse_dates=["Date"]) for s in SEASONS],
+        ignore_index=True,
+    )
+    dc_model = fit_dixon_coles(fd_all)
+    ratings = team_ratings_from_model(dc_model)
+    hist_attack = historical_avg_team_rating(rated, ratings, "attack")
+    hist_defense = historical_avg_team_rating(rated, ratings, "defense")
+
+    current_team = listone.set_index("player_code")["team_name"]
+    current_role = listone.set_index("player_code")["role"]
+    adjustments = compute_adjustments(current_team, current_role, hist_attack, hist_defense, ratings, TEAM_STRENGTH_K)
+
     rows = []
     for r in listone.itertuples(index=False):
         result = simulate_fantavoto(int(r.player_code), r.role, player_pools, role_pools, n_sims=N_SIMS, rng=rng)
+        adj = adjustments.get(r.player_code, 0.0)
+        if adj != 0.0:
+            result = apply_adjustment(result, adj)
         rows.append(
             {
                 "player_code": r.player_code,
@@ -127,6 +158,7 @@ def part_b_application(rated: pd.DataFrame) -> None:
                 "sim_median": round(result.median, 3),
                 "sim_p10": round(result.p10, 3),
                 "sim_p90": round(result.p90, 3),
+                "team_strength_adjustment": round(adj, 3),
                 "player_games_in_pool": result.player_games_in_pool,
                 "used_role_pool_only": result.used_role_pool_only,
             }
@@ -140,7 +172,10 @@ def part_b_application(rated: pd.DataFrame) -> None:
         "",
         f"{len(out)} players, {N_SIMS} simulations each, seed={SEED}. Mixture bootstrap "
         f"(own history vs. role pool, weight n/(n+{DEFAULT_PRIOR_GAMES:.0f})) over real "
-        "historical (voto, events) rows -- no assumed distribution shape.",
+        "historical (voto, events) rows -- no assumed distribution shape. Includes a "
+        f"Dixon-Coles team-strength adjustment (k={TEAM_STRENGTH_K}, validated via "
+        "walk-forward, ADR-2026-023) for A/C/D roles whose 2026/27 team differs in "
+        "strength from their historical average team context.",
         "",
         "## Top 15 by simulated mean, with uncertainty range",
         "",

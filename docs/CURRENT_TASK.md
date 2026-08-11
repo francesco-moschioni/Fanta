@@ -16,6 +16,6 @@ Compilare prima di ogni modifica significativa e mantenere lo scope a una singol
 
 ## Progresso
 
-- Stato: not started
-- Ultimo commit/stato verificato: `f32a105`
-- Prossima azione: implementare `src/fantacalcio/scoring/team_strength_adjustment.py`.
+- Stato: blocco 1 completato (ADR-2026-023); blocco 2 (FVM come prior secondario) in corso.
+- Blocco 1: `src/fantacalcio/scoring/team_strength_adjustment.py` implementato, 8 test dedicati + 209 test totali passano. k=0,5 validato via walk-forward (`scripts/run_team_strength_adjustment_validation.py`): correlazione con Fm reale 0,3472→0,3522. Integrato in `scripts/run_monte_carlo_fantavoto.py` parte B (applicazione roster 2026/27).
+- Prossima azione: blocco 2 — usare `fvm_classic`/`fvm_mantra` (già in `data/staged/fantacalcio_quotazioni_manual/*.csv`) come prior secondario per giocatori `no_history_transfer`/`no_history_new_team` (ADR-2026-020) invece della sola media di ruolo, validato onestamente prima di adottare.
