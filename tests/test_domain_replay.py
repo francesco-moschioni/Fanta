@@ -7,6 +7,7 @@ from fantacalcio.domain import (
     DomainError,
     Role,
     VoidEvent,
+    effective_events,
     replay,
     resolve_sealed_bid_round,
 )
@@ -319,3 +320,73 @@ def test_starting_at_a_dependent_round_raises_config_error(ruleset):
 def test_sealed_bid_resolution_is_explicitly_blocked():
     with pytest.raises(NotImplementedError, match="docs/OPEN_QUESTIONS.md"):
         resolve_sealed_bid_round()
+
+
+def test_effective_events_excludes_voided_assignment(ruleset):
+    events = [
+        _assign(
+            event_id="e1", round_id="G1", team_id="team-01", pool_id="defenders_top_1_60",
+            role=Role.DEF, item=AssignmentItem(player_ids=("def-01",)), amount=10,
+        ),
+        VoidEvent(event_id="e2", ts="2026-01-01T00:00:00Z", voids="e1", author="admin", reason="mistake"),
+    ]
+    effective = effective_events(events)
+    assert effective == []
+
+    state = replay(ruleset, effective)
+    assert "def-01" not in state.assigned_players
+
+
+def test_effective_events_excludes_corrected_assignment(ruleset):
+    events = [
+        _assign(
+            event_id="e1", round_id="G1", team_id="team-01", pool_id="defenders_top_1_60",
+            role=Role.DEF, item=AssignmentItem(player_ids=("def-01",)), amount=10,
+        ),
+        _assign(
+            event_id="e2", round_id="G1", team_id="team-01", pool_id="defenders_top_1_60",
+            role=Role.DEF, item=AssignmentItem(player_ids=("def-02",)), amount=15, corrects="e1",
+        ),
+    ]
+    effective = effective_events(events)
+    assert [e.event_id for e in effective] == ["e2"]
+    assert effective[0].corrects is None  # dangling reference to the excluded e1 cleared
+
+    state = replay(ruleset, effective)
+    assert "def-01" not in state.assigned_players
+    assert "def-02" in state.assigned_players
+
+
+def test_effective_events_keeps_untouched_assignments(ruleset):
+    events = [
+        _assign(
+            event_id="e1", round_id="G1", team_id="team-01", pool_id="defenders_top_1_60",
+            role=Role.DEF, item=AssignmentItem(player_ids=("def-01",)), amount=10,
+        ),
+    ]
+    assert [e.event_id for e in effective_events(events)] == ["e1"]
+
+
+def test_round_budget_carryover_is_per_team_not_shared(ruleset):
+    # Regression test (found via M4 slice 2 UI testing, 2026-08-11): team-01 spends
+    # 190/200 in G1 (remaining 10), team-02 spends 50/200 (remaining 150). team-01's
+    # G2 budget_available ("remaining_G1 + 100") must use team-01's OWN remaining
+    # (10), never team-02's, regardless of event processing order.
+    events = [
+        _assign(
+            event_id="e1", round_id="G1", team_id="team-01", pool_id="defenders_top_1_60",
+            role=Role.DEF, item=AssignmentItem(player_ids=("def-01",)), amount=190,
+        ),
+        _assign(
+            event_id="e2", round_id="G1", team_id="team-02", pool_id="defenders_top_1_60",
+            role=Role.DEF, item=AssignmentItem(player_ids=("def-02",)), amount=50,
+        ),
+        _assign(
+            event_id="e3", round_id="G2", team_id="team-01", pool_id="midfielders_top_1_60",
+            role=Role.MID, item=AssignmentItem(player_ids=("mid-01",)), amount=1,
+        ),
+    ]
+    state = replay(ruleset, events)
+    assert state.team("team-01").budgets["G1"].remaining == 10
+    assert state.team("team-02").budgets["G1"].remaining == 150
+    assert state.team("team-01").budgets["G2"].available == 110  # 10 + 100, own leftover

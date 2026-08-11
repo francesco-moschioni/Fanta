@@ -2,23 +2,27 @@
 
 Compilare prima di ogni modifica significativa e mantenere lo scope a una singola unità verificabile.
 
-- Obiettivo: M4 slice 1 — prima schermata UI, sola lettura: ricerca/filtri giocatori + scheda compatta (`docs/UX_PRODUCT.md`, priorità P0), su Streamlit + DuckDB (stack deciso in ADR-2026-008). Trasforma i CSV già prodotti (Monte Carlo, VAR, round pool, data quality tier) in una schermata effettivamente usabile prima dell'asta.
-- Perché ora: M0-M3 hanno gate soddisfatti (dominio, dati, baseline, motore VAR/max-bid); la regola di priorità di `docs/ROADMAP.md` blocca solo il modeling avanzato (M5) prima dei gate, non M4. Nessuna riga di UI esiste ancora nel repo.
-- In scope:
-  - Script di build che consolida `_m3_replacement_values.csv` (già include Monte Carlo + VAR + round pool + data quality tier) in una tabella DuckDB locale con colonna `as_of`/provenance esplicita (build timestamp, non finto "real-time").
-  - Pagina Streamlit "Giocatori": ricerca per nome, filtri per ruolo/squadra/round pool/data quality tier, tabella ordinata per VAR, scheda dettaglio per giocatore selezionato con i campi già disponibili da `docs/UX_PRODUCT.md`'s "Scheda giocatore": valore atteso (sim_mean), mediana/P10-P90, VAR, quotazione, tier di qualità dati, `player_games_in_pool`, flag `used_fvm_prior`/`team_strength_adjustment` come "driver" oggettivi, round pool e `list_state=provisional` badge esplicito (mai spacciato per lista ufficiale, ADR-2026-021).
-  - Campi esplicitamente NON disponibili in questa slice (offerta consigliata/massimo dinamico richiedono il ledger vivo, non ancora collegato all'UI; confronto a tre; costruttore rosa/lock) vanno mostrati come "non ancora disponibile", mai inventati o lasciati impliciti.
-- Fuori scope: costruttore rosa/campo grafico, cockpit live/ledger, lock, moduli, undo/autosave, apprendimento mercato — slice M4 successive. Nessuna scrittura all'utente (sola lettura).
-- Documenti canonici: `docs/UX_PRODUCT.md` (scheda giocatore, priorità P0), ADR-2026-008 (stack), ADR-2026-021 (list_state provisional).
-- File probabilmente coinvolti: `pyproject.toml` (dipendenze streamlit/duckdb), `src/fantacalcio/persistence/` (nuovo, layer dati DuckDB), `scripts/build_player_table.py` (nuovo), `app/Home.py` o `app/pages/*.py` (nuovo), test del data layer (non della UI Streamlit stessa, non praticamente unit-testabile).
-- Criteri di accettazione: build deterministico e riproducibile dai CSV già in `data/staged/`; nessun dato inventato per i campi non ancora disponibili; badge `list_state` sempre visibile; app avviata e verificata in browser (ricerca, filtri, scheda) prima di dichiarare fatto, per la regola di sessione sulle modifiche UI.
+- Obiettivo: M4 slice 2 — ledger vivo persistente (SQLite, ADR-2026-008) + tabellone squadre + registrazione manuale dei risultati pubblicati dall'admin + tetto di riferimento (massimo consigliato) nella scheda giocatore.
+- Perché ora: la slice 1 (ricerca/scheda, ADR-2026-027) è sola lettura su dati statici; questa slice collega il ledger vivo (già costruito in M0/M3: `src/fantacalcio/domain.py`, `src/fantacalcio/ledger_io.py`, `src/fantacalcio/auction/bid_recommendation.py`) così budget/rosa/massimo consigliato riflettano lo stato reale dell'asta, non uno snapshot statico.
+- **Vincolo di dominio importante** (`config/auction_rules.v1.yaml`): tutti i round G1-G4 sono **sealed bid**, risolti dall'admin dopo la chiusura di ciascun turno — non è un'asta live interattiva multi-squadra dentro l'app. Questa slice quindi:
+  - NON implementa un'"asta live" dove le squadre offrono in tempo reale l'una contro l'altra.
+  - Registra manualmente i **risultati già pubblicati dall'admin** (chi ha vinto cosa, a che prezzo, in che round) — un form di registrazione, non un meccanismo di offerta.
+  - Il "massimo consigliato" (formula dollar-rule già validata, ADR-2026-022) è un **tetto di riferimento** da scrivere sulla propria lista sealed-bid per il prossimo round, non una previsione di chi vincerà (la vittoria dipende da preferenza-poi-offerta risolte dall'admin, non dal miglior offerente in tempo reale). Etichettato esplicitamente così nella UI.
+- Fuori scope, esplicitamente bloccato:
+  - Import automatico del formato file admin (formato non ancora noto, arriva via Google Form — `docs/OPEN_QUESTIONS.md` "Formato effettivo dei file admin da importare").
+  - Risoluzione automatica delle preferenze sealed-bid (`resolve_sealed_bid_round` resta `NotImplementedError`, bloccato dal tie-breaker non confermato).
+  - Nomi reali squadre/partecipanti (non ancora in repo, `private_participants/` vuoto): uso identificativi generici (`team_01`..`team_20`, quanti quanto `ruleset.teams`), sostituibili in futuro senza toccare lo schema.
+  - Command palette, alert non bloccanti, apprendimento mercato, cockpit "velocità estrema" — slice successive.
+- File probabilmente coinvolti: `src/fantacalcio/persistence/ledger_store.py` (nuovo, riusa la serializzazione già in `src/fantacalcio/ledger_io.py`, nessuna duplicazione schema), `app/pages/2_Squadre.py` (nuovo), `app/pages/1_Giocatori.py` (aggiunta: selezione "la mia squadra" + tetto di riferimento), test del data layer.
+- Criteri di accettazione: append-only reale (mai UPDATE/DELETE su eventi esistenti, undo = nuovo `VoidEvent`); replay deterministico dal ledger persistito identico a quello in-memory già testato in M0; nessuna invenzione di nomi squadra/algoritmi di risoluzione non confermati; round G3/G4 gestiti esplicitamente come round distinti (non "G3_G4", che è solo un'etichetta di visualizzazione di `round_pools.py`) quando si registra un evento reale; verificato in browser prima di dichiarare fatto.
 - Comandi test/quality: `pytest -q`.
-- Seed: eredita 42 dove applicabile (non rilevante per UI sola lettura).
+- Seed: non applicabile (nessuna componente stocastica in questa slice).
 - Delegazione: vietata.
-- Decisioni aperte/blocchi: nessuno.
+- Decisioni aperte/blocchi: nessuno per questa slice (i blocchi reali — formato import admin, tie-breaker — restano esplicitamente fuori scope, non aggirati).
 
 ## Progresso
 
-- Stato: **completato** (ADR-2026-027). Verificato in browser end-to-end (ricerca, filtri, scheda).
-- `src/fantacalcio/persistence/player_table.py` (data layer DuckDB + provenance), `scripts/build_player_table.py`, `app/Home.py`, `app/pages/1_Giocatori.py`. 245 test totali passano (11 nuovi).
-- Prossima azione (M4 slice 2, non ancora scoped in dettaglio): costruttore rosa visuale + lock, oppure collegamento del ledger vivo (SQLite) per abilitare offerta consigliata/massimo dinamico nella scheda giocatore — da scegliere e scopare come nuova unità quando si riprende M4.
+- Stato: **completato** (ADR-2026-028). Verificato in browser end-to-end: registrazione G1→G2, undo, tetto di riferimento.
+- `src/fantacalcio/persistence/ledger_store.py`, `domain.effective_events()`, `app/pages/2_Squadre.py`, estensione `app/pages/1_Giocatori.py`. 258 test totali passano.
+- **Bug critico trovato e corretto durante il testing**: `domain.replay()` calcolava il budget di round successivi (es. G2 = remaining_G1 + 100) usando un dizionario di residui condiviso fra tutte le squadre invece che per-squadra — avrebbe corrotto i budget reali nell'asta vera. Corretto (`remaining_by_round_per_team`), test di regressione aggiunto. Vedi ADR-2026-028.
+- Prossima azione (M4 slice 3, non ancora scoped in dettaglio): costruttore rosa visuale con lock, oppure import del formato file admin quando disponibile (venerdì sera, ancora sconosciuto).

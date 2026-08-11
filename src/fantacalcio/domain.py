@@ -9,7 +9,7 @@ below and docs/OPEN_QUESTIONS.md.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import Enum
 from typing import Union
 
@@ -151,7 +151,12 @@ def replay(ruleset: Ruleset, events: list[Event]) -> LeagueState:
     immediately rather than silently skipping or auto-correcting the event.
     """
     state = LeagueState(ruleset=ruleset)
-    remaining_by_round: dict[str, int] = {}
+    # Keyed by team_id -> {round_id: remaining budget}. Per-team, not a single
+    # shared dict: a budget_available expression like "remaining_G1 + 100" must
+    # resolve to *that team's own* leftover from the earlier round, never
+    # whichever other team's event happened to be processed most recently for
+    # that round (found via M4 slice 2 UI testing, 2026-08-11 -- see ADR).
+    remaining_by_round_per_team: dict[str, dict[str, int]] = {}
     pools_by_round = {r.id: set(r.pools) for r in ruleset.rounds}
     round_by_id = {r.id: r for r in ruleset.rounds}
     max_role_counts = {
@@ -223,7 +228,9 @@ def replay(ruleset: Ruleset, events: list[Event]) -> LeagueState:
 
         team = state.team(event.team_id)
         if round_.id not in team.budgets:
-            available = evaluate_budget_expr(round_.budget_available_expr, remaining_by_round)
+            available = evaluate_budget_expr(
+                round_.budget_available_expr, remaining_by_round_per_team.get(event.team_id, {})
+            )
             team.budgets[round_.id] = TeamRoundBudget(available=available)
         budget = team.budgets[round_.id]
 
@@ -265,6 +272,37 @@ def replay(ruleset: Ruleset, events: list[Event]) -> LeagueState:
         budget.spent += event.amount
         state.assigned_players.update(event.item.player_ids)
         state.events_applied.append(event.event_id)
-        remaining_by_round[round_.id] = budget.remaining
+        remaining_by_round_per_team.setdefault(event.team_id, {})[round_.id] = budget.remaining
 
     return state
+
+
+def effective_events(events: list[Event]) -> list[AssignmentEvent]:
+    """Returns only the AssignmentEvents still in force: voided events and events
+    superseded by a later correction are dropped, and VoidEvents themselves are
+    dropped (they're not assignments). Order is preserved.
+
+    `replay()` intentionally does NOT retroactively unwind a voided/corrected
+    event's roster/budget effects (see test_domain_replay.py's
+    test_void_event_marks_original_as_voided) -- that's documented there as "a
+    query-time concern (M3+), not a replay-time mutation". This is that query:
+    feed its output back into `replay()` to get the *current* state a UI should
+    display, as opposed to the full audit trail `replay()` on the raw event list
+    gives you.
+
+    A retained event whose `corrects` field pointed at a now-excluded event has
+    that field cleared: after filtering, its target no longer exists in this
+    view, and `replay()` requires `corrects` to reference an event actually
+    present in the sequence it's given. The returned list is round-ordered
+    (order preserved from `events`) and independently replayable."""
+    voided_ids: set[str] = set()
+    for event in events:
+        if isinstance(event, VoidEvent):
+            voided_ids.add(event.voids)
+        elif isinstance(event, AssignmentEvent) and event.corrects is not None:
+            voided_ids.add(event.corrects)
+    return [
+        replace(e, corrects=None) if e.corrects is not None else e
+        for e in events
+        if isinstance(e, AssignmentEvent) and e.event_id not in voided_ids
+    ]

@@ -8,9 +8,14 @@ mostrati esplicitamente come tali, mai inventati.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pandas as pd
 import streamlit as st
 
+from fantacalcio.auction.bid_recommendation import BidRecommendationError, recommend_max_bid
+from fantacalcio.config import load_ruleset
+from fantacalcio.persistence.ledger_store import connect as connect_ledger, load_current_league_state
 from fantacalcio.persistence.player_table import (
     DEFAULT_DB_PATH,
     connect,
@@ -18,6 +23,8 @@ from fantacalcio.persistence.player_table import (
     get_build_meta,
     search_players,
 )
+
+RULESET_PATH = Path("config/auction_rules.v1.yaml")
 
 st.set_page_config(page_title="Fantacalcio — Giocatori", layout="wide")
 st.title("Giocatori")
@@ -130,10 +137,44 @@ if drivers:
 else:
     st.caption("Nessun driver aggiuntivo oltre allo storico diretto del giocatore.")
 
+st.divider()
+st.subheader("Tetto di riferimento (massimo consigliato)")
+st.caption(
+    "Non è una previsione di chi vincerà: i round sono sealed bid risolti "
+    "dall'admin (preferenza, poi offerta), non un'asta al miglior offerente in "
+    "tempo reale. È un tetto di riferimento da scrivere sulla propria lista, "
+    "basato sul budget/rosa residui reali (formula dollar-rule, ADR-2026-022)."
+)
+
+my_team_id = st.session_state.get("my_team_id", "team_01")
+round_pool = player["round_pool"]
+round_choice = round_pool
+if round_pool == "G3_G4":
+    round_choice = st.radio("Round (G3/G4 condividono lo stesso pool)", ["G3", "G4"], horizontal=True)
+
+ruleset = load_ruleset(RULESET_PATH)
+ledger_conn = connect_ledger()  # auto-crea un ledger vuoto se non esiste ancora
+league_state = load_current_league_state(ledger_conn, ruleset)
+pool_df = search_players(conn, role=player["role"], round_pool=round_pool)[["player_code", "var_mean"]]
+
+try:
+    rec = recommend_max_bid(
+        league_state, ruleset, my_team_id, round_choice, int(player["player_code"]), float(player["var_mean"]), pool_df
+    )
+except BidRecommendationError as exc:
+    st.info(f"Massimo consigliato non disponibile per questo giocatore/squadra: {exc}")
+else:
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Massimo consigliato (tetto)", rec.max_bid)
+    c2.metric("Budget residuo squadra", rec.remaining_budget)
+    c3.metric("Slot ancora da riempire", rec.remaining_slots_total)
+    st.caption(
+        f"Squadra: `{my_team_id}` (cambiabile nella pagina Squadre). Quota VAR sul pool "
+        f"residuo: {rec.var_share:.1%}. Budget discrezionale dopo riserva slot: {rec.discretionary_budget}."
+    )
+
 with st.expander("Non ancora disponibile in questa vista"):
     st.write(
-        "- Offerta consigliata / massimo dinamico: richiedono il ledger vivo dell'asta "
-        "(collegamento previsto in una slice M4 successiva).\n"
         "- Probabilità di voto (rischio SV): non ancora esposta in questa tabella.\n"
         "- Valore marginale per la propria rosa, compatibilità slot/moduli: richiedono "
         "il costruttore rosa (fuori scope in questa slice).\n"
