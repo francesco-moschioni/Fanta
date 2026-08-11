@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import numpy as np
 import pandas as pd
 
 MATCHDAYS_PER_SEASON = 38
@@ -98,6 +99,44 @@ def latest_known_participation(participation: SeasonParticipation) -> pd.DataFra
     latest = frame.loc[idx, ["player_code", "season_label", "role", "matchdays_rated", "participation_rate"]].copy()
     seasons_count = frame.groupby("player_code").size().rename("seasons_of_history")
     return latest.merge(seasons_count, on="player_code", how="left").reset_index(drop=True)
+
+
+def decayed_participation_estimate(
+    participation: SeasonParticipation,
+    half_life_seasons: float | None,
+    as_of_season_rank: int | None = None,
+) -> pd.DataFrame:
+    """One row per player: a recency-weighted average participation rate across
+    every season strictly before `as_of_season_rank` (or all available seasons if
+    None), instead of `latest_known_participation`'s single most-recent-season
+    cutoff. `half_life_seasons=None` gives every season equal weight (a plain
+    multi-season average). Validated against the single-season baseline in
+    docs/CURRENT_TASK.md block 4 (ADR-2026-026) before being adopted anywhere."""
+    frame = participation.frame
+    if as_of_season_rank is not None:
+        frame = frame[frame["season_rank"] < as_of_season_rank]
+    if frame.empty:
+        return pd.DataFrame(columns=["player_code", "decayed_participation_rate", "seasons_of_history"])
+
+    max_rank = frame.groupby("player_code")["season_rank"].transform("max")
+    seasons_ago = max_rank - frame["season_rank"]
+    if half_life_seasons is None:
+        weight = pd.Series(1.0, index=frame.index)
+    else:
+        decay_rate = np.log(2) / half_life_seasons
+        weight = np.exp(-decay_rate * seasons_ago)
+
+    weighted = frame.assign(_weight=weight, _weighted_rate=frame["participation_rate"] * weight)
+    agg = weighted.groupby("player_code").apply(
+        lambda g: pd.Series(
+            {
+                "decayed_participation_rate": g["_weighted_rate"].sum() / g["_weight"].sum(),
+                "seasons_of_history": len(g),
+            }
+        ),
+        include_groups=False,
+    )
+    return agg.reset_index()
 
 
 @dataclass(frozen=True)

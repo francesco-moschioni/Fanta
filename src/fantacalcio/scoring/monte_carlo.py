@@ -40,6 +40,11 @@ class HistoricalRow:
     red_cards: int
     penalties_missed: int
     team_goals_conceded: float | None  # NaN-safe: None if the join didn't match
+    # Recency weight (docs/CURRENT_TASK.md block 4); 1.0 = no decay, the
+    # pre-block-4 behavior. Only consulted when simulate_fantavoto is called
+    # with use_recency_weights=True -- default sampling is untouched so blocks
+    # 1-2's validated k/FVM-bucket results stay reproducible.
+    recency_weight: float = 1.0
 
 
 def build_event_pools(rated_with_team_data: pd.DataFrame) -> tuple[dict, dict]:
@@ -51,6 +56,7 @@ def build_event_pools(rated_with_team_data: pd.DataFrame) -> tuple[dict, dict]:
 
     for row in rated_with_team_data.itertuples(index=False):
         team_conceded = getattr(row, "team_goals_conceded", None)
+        weight = getattr(row, "recency_weight", None)
         historical_row = HistoricalRow(
             voto=float(row.voto),
             role=row.role,
@@ -62,6 +68,7 @@ def build_event_pools(rated_with_team_data: pd.DataFrame) -> tuple[dict, dict]:
             red_cards=int(row.red_cards),
             penalties_missed=int(row.penalties_missed),
             team_goals_conceded=float(team_conceded) if pd.notna(team_conceded) else None,
+            recency_weight=float(weight) if weight is not None and pd.notna(weight) else 1.0,
         )
         player_pools.setdefault(row.player_code, []).append(historical_row)
         role_pools.setdefault(row.role, []).append(historical_row)
@@ -113,6 +120,16 @@ class SimulationResult:
         return float(np.percentile(self.samples, 90))
 
 
+def _sample_pool_indices(pool: list[HistoricalRow], size: int, rng: np.random.Generator, use_recency_weights: bool) -> np.ndarray:
+    if not use_recency_weights:
+        return rng.integers(0, len(pool), size=size)
+    weights = np.array([row.recency_weight for row in pool], dtype=float)
+    total = weights.sum()
+    if total <= 0:
+        return rng.integers(0, len(pool), size=size)  # degenerate: fall back to uniform
+    return rng.choice(len(pool), size=size, p=weights / total)
+
+
 def simulate_fantavoto(
     player_code: int,
     role: str,
@@ -121,7 +138,12 @@ def simulate_fantavoto(
     n_sims: int = DEFAULT_N_SIMS,
     prior_games: float = DEFAULT_PRIOR_GAMES,
     rng: np.random.Generator | None = None,
+    use_recency_weights: bool = False,
 ) -> SimulationResult:
+    """`use_recency_weights=False` (default) samples uniformly within each pool --
+    the pre-block-4 behavior, kept exact so blocks 1-2's validated results stay
+    reproducible. Set True to sample proportional to each row's `recency_weight`
+    (see time_decay.add_recency_weight), validated separately per ADR-2026-026."""
     if rng is None:
         rng = np.random.default_rng(DEFAULT_SEED)
 
@@ -138,13 +160,13 @@ def simulate_fantavoto(
 
     n_own_draws = int(draws_from_own.sum())
     if n_own_draws > 0:
-        idx = rng.integers(0, n, size=n_own_draws)
+        idx = _sample_pool_indices(own_pool, n_own_draws, rng, use_recency_weights)
         for i, pool_idx in zip(np.where(draws_from_own)[0], idx):
             samples[i] = score_fantavoto(own_pool[pool_idx].voto, _row_to_events(own_pool[pool_idx], role))
 
     n_role_draws = n_sims - n_own_draws
     if n_role_draws > 0:
-        idx = rng.integers(0, len(role_pool), size=n_role_draws)
+        idx = _sample_pool_indices(role_pool, n_role_draws, rng, use_recency_weights)
         for i, pool_idx in zip(np.where(~draws_from_own)[0], idx):
             samples[i] = score_fantavoto(role_pool[pool_idx].voto, _row_to_events(role_pool[pool_idx], role))
 

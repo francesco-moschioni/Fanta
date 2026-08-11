@@ -1,8 +1,11 @@
 import pandas as pd
+import pytest
 
 from fantacalcio.modeling.participation import (
+    SeasonParticipation,
     compute_season_participation,
     cross_check_against_statistiche,
+    decayed_participation_estimate,
     latest_known_participation,
     season_to_season_persistence,
 )
@@ -107,3 +110,43 @@ def test_latest_known_participation_picks_most_recent_season():
     assert row["season_label"] == "s1"
     assert row["matchdays_rated"] == 30
     assert row["seasons_of_history"] == 2
+
+
+def _participation_frame(rows):
+    return SeasonParticipation(frame=pd.DataFrame(rows))
+
+
+class TestDecayedParticipationEstimate:
+    def test_no_decay_gives_plain_average(self):
+        rows = [
+            {"player_code": 1, "season_label": "s0", "season_rank": 0, "role": "D", "matchdays_rated": 19, "participation_rate": 0.5},
+            {"player_code": 1, "season_label": "s1", "season_rank": 1, "role": "D", "matchdays_rated": 38, "participation_rate": 1.0},
+        ]
+        result = decayed_participation_estimate(_participation_frame(rows), half_life_seasons=None)
+        row = result[result["player_code"] == 1].iloc[0]
+        assert row["decayed_participation_rate"] == pytest.approx(0.75)
+        assert row["seasons_of_history"] == 2
+
+    def test_decay_weights_recent_season_more(self):
+        rows = [
+            {"player_code": 1, "season_label": "s0", "season_rank": 0, "role": "D", "matchdays_rated": 0, "participation_rate": 0.0},
+            {"player_code": 1, "season_label": "s1", "season_rank": 1, "role": "D", "matchdays_rated": 38, "participation_rate": 1.0},
+        ]
+        result = decayed_participation_estimate(_participation_frame(rows), half_life_seasons=1.0)
+        row = result[result["player_code"] == 1].iloc[0]
+        assert row["decayed_participation_rate"] > 0.5  # closer to the recent season's 1.0
+
+    def test_as_of_season_rank_excludes_future_seasons(self):
+        rows = [
+            {"player_code": 1, "season_label": "s0", "season_rank": 0, "role": "D", "matchdays_rated": 19, "participation_rate": 0.5},
+            {"player_code": 1, "season_label": "s1", "season_rank": 1, "role": "D", "matchdays_rated": 38, "participation_rate": 1.0},
+        ]
+        result = decayed_participation_estimate(_participation_frame(rows), half_life_seasons=None, as_of_season_rank=1)
+        row = result[result["player_code"] == 1].iloc[0]
+        assert row["decayed_participation_rate"] == pytest.approx(0.5)
+        assert row["seasons_of_history"] == 1
+
+    def test_empty_after_as_of_cutoff_returns_empty_frame(self):
+        rows = [{"player_code": 1, "season_label": "s0", "season_rank": 0, "role": "D", "matchdays_rated": 19, "participation_rate": 0.5}]
+        result = decayed_participation_estimate(_participation_frame(rows), half_life_seasons=None, as_of_season_rank=0)
+        assert result.empty

@@ -8,11 +8,11 @@ from fantacalcio.scoring.monte_carlo import (
 )
 
 
-def _row(player_code, role, voto, goals_scored=0, team_goals_conceded=None, **kwargs):
+def _row(player_code, role, voto, goals_scored=0, team_goals_conceded=None, recency_weight=1.0, **kwargs):
     defaults = dict(
         player_code=player_code, role=role, voto=voto, goals_scored=goals_scored,
         assists=0, goals_conceded=0, own_goals=0, yellow_cards=0, red_cards=0,
-        penalties_missed=0, team_goals_conceded=team_goals_conceded,
+        penalties_missed=0, team_goals_conceded=team_goals_conceded, recency_weight=recency_weight,
     )
     defaults.update(kwargs)
     return defaults
@@ -88,3 +88,24 @@ class TestSimulateFantavoto:
         player_pools, role_pools = _pools_from_rows(rows)
         result = simulate_fantavoto(1, "A", player_pools, role_pools, n_sims=100, prior_games=1.0, rng=np.random.default_rng(42))
         assert result.mean > 8.0  # 6.0 voto + 3.0 goal, minus small role-pool mixing
+
+    def test_recency_weights_ignored_by_default(self):
+        # Half the rows (voto=4) have zero weight; if weights aren't consulted
+        # by default, both halves are drawn from equally.
+        rows = [_row(1, "D", 8.0, recency_weight=1.0) for _ in range(20)] + [
+            _row(1, "D", 4.0, recency_weight=0.0) for _ in range(20)
+        ]
+        player_pools, role_pools = _pools_from_rows(rows)
+        result = simulate_fantavoto(1, "D", player_pools, role_pools, n_sims=2000, prior_games=1.0, rng=np.random.default_rng(42))
+        assert 5.5 < result.mean < 6.5  # roughly midway between 4.0 and 8.0
+
+    def test_recency_weights_used_when_enabled(self):
+        rows = [_row(1, "D", 8.0, recency_weight=1.0) for _ in range(20)] + [
+            _row(1, "D", 4.0, recency_weight=0.0) for _ in range(20)
+        ]
+        player_pools, role_pools = _pools_from_rows(rows)
+        result = simulate_fantavoto(
+            1, "D", player_pools, role_pools, n_sims=2000, prior_games=1.0,
+            rng=np.random.default_rng(42), use_recency_weights=True,
+        )
+        assert result.mean > 7.5  # zero-weight rows should never be drawn
