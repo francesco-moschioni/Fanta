@@ -14,9 +14,11 @@ import pandas as pd
 import streamlit as st
 
 from fantacalcio.auction.bid_recommendation import BidRecommendationError, recommend_max_bid
+from fantacalcio.auction.lock_feasibility import check_lock_feasibility
 from fantacalcio.auction.replacement import league_slots_per_role
 from fantacalcio.config import ConfigError, load_ruleset
 from fantacalcio.persistence.ledger_store import connect as connect_ledger, load_current_league_state
+from fantacalcio.persistence.locks_store import add_lock, connect as connect_locks, is_locked, list_locks, remove_lock
 from fantacalcio.persistence.player_table import (
     DEFAULT_DB_PATH,
     connect,
@@ -46,8 +48,21 @@ def _get_ruleset():
     return load_ruleset(RULESET_PATH)
 
 
+@st.cache_resource
+def _get_locks_conn():
+    return connect_locks()
+
+
+@st.cache_resource
+def _get_ledger_conn():
+    return connect_ledger()  # auto-crea un ledger vuoto se non esiste ancora
+
+
 conn = _get_connection()
 ruleset = _get_ruleset()
+locks_conn = _get_locks_conn()
+ledger_conn = _get_ledger_conn()
+league_state = load_current_league_state(ledger_conn, ruleset)
 meta = get_build_meta(conn)
 st.caption(
     f"Dati costruiti il {meta.get('built_at', '?')[:19]} UTC da "
@@ -218,6 +233,26 @@ if drivers:
 else:
     st.caption("Nessun driver aggiuntivo oltre allo storico diretto del giocatore.")
 
+my_team_id_for_lock = st.session_state.get("my_team_id", "team_01")
+currently_locked = is_locked(locks_conn, my_team_id_for_lock, int(player["player_code"]))
+if currently_locked:
+    if st.button(f"Sblocca (obiettivo di `{my_team_id_for_lock}`)"):
+        remove_lock(locks_conn, my_team_id_for_lock, int(player["player_code"]))
+        st.success("Sbloccato.")
+        st.rerun()
+else:
+    if st.button(f"Blocca come obiettivo di `{my_team_id_for_lock}`"):
+        feasibility = check_lock_feasibility(
+            my_team_id_for_lock, int(player["player_code"]), player["role"], ruleset,
+            league_state, list_locks(locks_conn, my_team_id_for_lock),
+        )
+        if not feasibility.ok:
+            st.error(f"Blocco non applicato: {feasibility.reason}")
+        else:
+            add_lock(locks_conn, my_team_id_for_lock, int(player["player_code"]), player["role"])
+            st.success(f"Bloccato come obiettivo di {my_team_id_for_lock}. Vedi pagina **Rosa**.")
+            st.rerun()
+
 st.divider()
 st.subheader("Tetto di riferimento (massimo consigliato)")
 st.caption(
@@ -233,8 +268,6 @@ round_choice = round_pool
 if round_pool == "G3_G4":
     round_choice = st.radio("Round (G3/G4 condividono lo stesso pool)", ["G3", "G4"], horizontal=True)
 
-ledger_conn = connect_ledger()  # auto-crea un ledger vuoto se non esiste ancora
-league_state = load_current_league_state(ledger_conn, ruleset)
 pool_df = search_players(conn, role=player["role"], round_pool=round_pool)[["player_code", "var_mean"]]
 
 try:
