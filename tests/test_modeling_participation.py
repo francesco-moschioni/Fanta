@@ -3,6 +3,7 @@ import pandas as pd
 from fantacalcio.modeling.participation import (
     compute_season_participation,
     cross_check_against_statistiche,
+    latest_known_participation,
     season_to_season_persistence,
 )
 
@@ -92,3 +93,17 @@ def test_cross_check_against_statistiche_no_overlap():
     statistiche = pd.DataFrame({"player_code": [999], "matches_with_vote": [10]})
     result = cross_check_against_statistiche(participation, statistiche, "2025_26")
     assert result.n_matched == 0
+
+
+def test_latest_known_participation_picks_most_recent_season():
+    rows = (
+        [_voti_panel_row(1, "s0", 0, md) for md in range(1, 6)]  # 5 matchdays, season_rank 0
+        + [_voti_panel_row(1, "s1", 1, md) for md in range(1, 31)]  # 30 matchdays, season_rank 1 (latest)
+    )
+    df = pd.DataFrame(rows)
+    participation = compute_season_participation(df)
+    latest = latest_known_participation(participation)
+    row = latest[latest["player_code"] == 1].iloc[0]
+    assert row["season_label"] == "s1"
+    assert row["matchdays_rated"] == 30
+    assert row["seasons_of_history"] == 2

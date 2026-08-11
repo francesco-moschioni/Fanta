@@ -2,7 +2,7 @@
 
 Compilare prima di ogni modifica significativa e mantenere lo scope a una singola unità verificabile.
 
-- Obiettivo: `TODO` — modello di partecipazione (tasso stagionale) completato, vedi Progresso.
+- Obiettivo: `TODO` — prima valutazione pre-asta 2026/27 completata (voto atteso + partecipazione), vedi Progresso.
 - Perché ora: `TODO`
 - In scope: `TODO`
 - Fuori scope: `TODO`
@@ -17,9 +17,7 @@ Compilare prima di ogni modifica significativa e mantenere lo scope a una singol
 
 ## Progresso
 
-- Stato: **blocco partecipazione completato**; blocco regole d'asta completato prima di quello.
-- Ultimo commit/stato verificato: sessione 2026-08-11, `pytest -q` → 124 passed.
-- Sintesi:
-  - Regole d'asta: recap admin integrato, corretto un errore reale (G3/G4 non sono asta aperta), ADR-2026-013.
-  - Partecipazione: `src/fantacalcio/modeling/participation.py`, tasso di partecipazione stagione-su-stagione batte la baseline media globale (MAE 0.217 vs 0.256, correlazione 0.428); cross-check tra voti e statistiche molto forte (corr 0.979). ADR-2026-014.
-- Prossima azione possibile: integrare il tasso di partecipazione come feature nello stimatore voto (`player_voto.py`) per un output combinato voto-atteso × probabilità-schierato; oppure procedere al motore Monte Carlo/scoring engine di M2/M3.
+- Stato: **prima valutazione pre-asta completata** (ADR-2026-015); ingestion listone 2021/22-2026/27 completata prima di questo (12 file).
+- Ultimo commit/stato verificato: sessione 2026-08-11, `pytest -q` → 129 passed.
+- Sintesi: voto atteso (shrinkage fittato su tutto lo storico) + tasso di partecipazione (ultima stagione nota) applicati ai 498 giocatori del listone 2026/27 reale. Risultati plausibili (top players noti in cima, difensori minori in fondo, medie per ruolo sensate). 84/498 giocatori senza storico, fallback dichiarato. Esplicitamente NON un modello di valore d'asta — manca il layer forecast-to-bid (replacement level, scarsità, budget, domanda avversari).
+- Prossima azione possibile: costruire il layer forecast-to-bid (valore sopra replacement, collegamento a `config/auction_rules.v1.yaml` e ai pool G1-G4), oppure il motore Monte Carlo di scoring che applica `SCORING_RULES.md` alle distribuzioni.

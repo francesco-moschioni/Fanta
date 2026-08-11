@@ -87,6 +87,19 @@ def season_to_season_persistence(participation: SeasonParticipation) -> Persiste
     )
 
 
+def latest_known_participation(participation: SeasonParticipation) -> pd.DataFrame:
+    """One row per player: their most recent season's participation rate, plus how
+    many seasons of history back it. For predicting a season that hasn't been
+    played yet — the "last known" rate, not an average across a possibly-stale
+    career (a player's most recent season is more informative than their rookie
+    year for what to expect next)."""
+    frame = participation.frame
+    idx = frame.groupby("player_code")["season_rank"].idxmax()
+    latest = frame.loc[idx, ["player_code", "season_label", "role", "matchdays_rated", "participation_rate"]].copy()
+    seasons_count = frame.groupby("player_code").size().rename("seasons_of_history")
+    return latest.merge(seasons_count, on="player_code", how="left").reset_index(drop=True)
+
+
 @dataclass(frozen=True)
 class CrossCheckResult:
     n_matched: int

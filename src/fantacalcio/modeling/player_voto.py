@@ -157,3 +157,34 @@ def walk_forward(
             last_value[row.player_code] = row.voto
 
     return pd.DataFrame.from_records(records)
+
+
+@dataclass(frozen=True)
+class FittedStats:
+    player_stats: RunningStats
+    role_stats: RunningStats
+    global_stats: RunningStats
+    seasons_used: list[str]
+
+
+def fit_final_stats(df: pd.DataFrame) -> FittedStats:
+    """Accumulate running stats over the *entire* available history (all seasons),
+    for predicting a genuinely future, unplayed season — not a backtest. Distinct
+    from walk_forward: this returns final state only, no per-row scoring, since
+    there's nothing to score yet for a season that hasn't happened."""
+    player_stats = RunningStats()
+    role_stats = RunningStats()
+    global_stats = RunningStats()
+
+    rated = df[~df["voto_no_vote"]]
+    for row in rated.itertuples(index=False):
+        player_stats.update(row.player_code, row.voto)
+        role_stats.update(row.role, row.voto)
+        global_stats.update("_global", row.voto)
+
+    return FittedStats(
+        player_stats=player_stats,
+        role_stats=role_stats,
+        global_stats=global_stats,
+        seasons_used=sorted(df["season_label"].unique().tolist()),
+    )

@@ -2,6 +2,7 @@ import pandas as pd
 import pytest
 
 from fantacalcio.modeling.player_voto import (
+    fit_final_stats,
     RunningStats,
     load_player_matchday_panel,
     shrunk_estimate,
@@ -147,3 +148,19 @@ class TestLoadPlayerMatchdayPanel:
         df.to_csv(tmp_path / "voti_1999_00_g1.csv", index=False)
         with pytest.raises(ValueError, match="not in SEASON_ORDER"):
             load_player_matchday_panel(staged_dir=tmp_path)
+
+
+class TestFitFinalStats:
+    def test_uses_all_rows_not_walk_forward(self):
+        df = _synthetic_panel()  # player 1 (role D, 5 matchdays), player 2 (role A, 5 matchdays)
+        fitted = fit_final_stats(df)
+        assert fitted.player_stats.counts[1] == 5
+        assert fitted.role_stats.counts["D"] == 5
+        assert fitted.global_stats.counts["_global"] == 10
+        assert fitted.seasons_used == ["2021_22"]
+
+    def test_excludes_no_vote_rows(self):
+        df = _synthetic_panel()
+        df.loc[(df["player_code"] == 1) & (df["matchday"] == 1), "voto_no_vote"] = True
+        fitted = fit_final_stats(df)
+        assert fitted.player_stats.counts[1] == 4
