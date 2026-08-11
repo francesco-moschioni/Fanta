@@ -33,7 +33,7 @@ class RosterComposition:
 class Round:
     id: str
     order: int
-    mode: str  # "sealed_bid" | "open_auction"
+    mode: str  # "sealed_bid_list" | "sealed_bid_free"
     budget_increment: int
     budget_available_expr: str
     pools: tuple[str, ...]
@@ -69,7 +69,7 @@ class Ruleset:
         return self.uncertain_historical_fields.get(field_name) is not None
 
 
-_SUPPORTED_MODES = ("sealed_bid", "open_auction")
+_SUPPORTED_MODES = ("sealed_bid_list", "sealed_bid_free")
 _REQUIRED_LIST_STATES = frozenset({"unknown", "provisional", "official"})
 
 

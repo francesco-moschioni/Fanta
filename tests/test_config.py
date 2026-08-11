@@ -10,8 +10,8 @@ def test_loads_real_ruleset(ruleset):
     assert ruleset.ruleset_id == "fantacalcio-asta-2026-v1"
     assert ruleset.teams == 20
     assert [r.id for r in ruleset.rounds] == ["G1", "G2", "G3", "G4"]
-    assert ruleset.rounds[0].mode == "sealed_bid"
-    assert ruleset.rounds[2].mode == "open_auction"
+    assert ruleset.rounds[0].mode == "sealed_bid_list"
+    assert ruleset.rounds[2].mode == "sealed_bid_free"
 
 
 def test_roster_composition_sums_to_total(ruleset):
@@ -19,15 +19,16 @@ def test_roster_composition_sums_to_total(ruleset):
     assert r.goalkeeper_block_size + r.defenders + r.midfielders + r.forwards == r.total_players
 
 
-def test_uncertain_fields_are_unconfirmed(ruleset):
+def test_resolved_fields_are_confirmed(ruleset):
+    # Resolved 2026-08-11 by the admin's auction-rules recap (ADR-2026-013).
+    for key in ("sealed_bid_preference_count", "automatic_fallback_assignment"):
+        assert ruleset.is_field_confirmed(key)
+
+
+def test_still_uncertain_fields_are_unconfirmed(ruleset):
     # These must stay null until an approved ADR fills them in; a passing test here
     # would mean someone silently guessed a value instead of recording a decision.
-    for key in (
-        "sealed_bid_preference_count",
-        "sealed_bid_tie_breaker",
-        "minimum_bid_source",
-        "automatic_fallback_assignment",
-    ):
+    for key in ("sealed_bid_tie_breaker", "minimum_bid_source"):
         assert not ruleset.is_field_confirmed(key)
 
 
@@ -63,13 +64,13 @@ def _minimal_valid_yaml(**overrides: str) -> str:
       rounds:
         - id: G1
           order: 1
-          mode: sealed_bid
+          mode: sealed_bid_list
           budget_increment: 100
           budget_available: "100"
           pools: [pool_a]
         - id: G2
           order: 2
-          mode: open_auction
+          mode: sealed_bid_free
           budget_increment: 10
           budget_available: "remaining_G1 + 10"
           pools: [pool_b]
@@ -111,7 +112,7 @@ def test_forward_budget_reference_raises(tmp_path):
 
 
 def test_unsupported_mode_raises(tmp_path):
-    yaml_text = _minimal_valid_yaml().replace("mode: open_auction", "mode: dutch_auction")
+    yaml_text = _minimal_valid_yaml().replace("mode: sealed_bid_free", "mode: dutch_auction")
     path = _write(tmp_path, yaml_text)
     with pytest.raises(ConfigError, match="unsupported mode"):
         load_ruleset(path)

@@ -1,0 +1,43 @@
+Recap regole e funzionamento asta — fornito dall'admin via WhatsApp, 11/08/2026
+
+Vi allego il recap delle regole, per i nuovi e per chi volessse dargli una spolverata. Per qualsiasi domanda scrivetemi qua o in privato.
+É lungo ma é completo @all
+
+L'asta sarà divisa in tre fasi.
+Fase 1: asta a busta chiusa con liste per i top
+Fase 2: asta a busta chiusa libera
+Fase 3: completamento automatico delle rose.
+
+PRIMA FASE - Parte Domenica alle 12
+L'obiettivo della prima fase sarà quello di assegnare a ogni squadra 11 giocatori "top": 3 portieri, 3 difensori, 3 centrocampisti e 2 attaccanti. La prima fase sarà divisa in due giornate: nella prima verranno battuti portieri e difensori (24 ore di tempo fino a lunedì alle 12) mentre nella seconda centrocampisti e attaccanti (24 ore di tempo fino a martedì alle 12)
+
+La prima fase si svolgerà tramite un'asta a busta chiusa utilizzando dei Google Forms. Per ogni ruolo saranno disponibili diverse liste di giocatori, divise in base alla classifica di riferimento. Queste liste verranno pubblicate venerdì sera. Per ognuna delle liste dovrete indicare 6 preferenze, specificando per ciascun giocatore anche l'offerta che siete disposti a fare. Ogni giocatore avrà infatti un'offerta minima, che dovrà essere rispettata. Avrete a disposizione al primo giorno fino a 200 crediti per portieri e difensori, a cui si aggiungeranno altri 100 crediti per centrocampisti e attaccanti. Valutate quindi quanto risparmiare per i reparti avanzati.
+
+Esempio: lista portieri.
+Lokomotiv Mosquera esprime 6 preferenze
+1) Porta Inter 45 crediti
+2) Porta Roma 45 crediti
+3) Porta Napoli 40 crediti
+4) Porta Juve 35 crediti
+5) Porta Sassuolo 25 crediti
+6) Porta Venezia 20 crediti.
+
+Le preferenze verranno incrociate con quelle delle altre squadre, dando precedenza prima alla preferenza espressa e poi all'offerta. Tradotto: se mettete Lautaro come prima preferenza e siete gli unici a farlo, vincerete il giocatore anche se altri fantallenatori hanno fatto un'offerta più alta per lui, ma come seconda o terza preferenza. SCEGLIETE QUINDI ATTENTAMENTE L'ORDINE DELLE PREFERENZE
+
+Le offerte verranno quindi poi raccolte e incrociate con le preferenze di tutte le squadre. L'obiettivo sarà fare in modo che ogni squadra riceva un giocatore da ciascuna delle liste previste, garantendo quindi a tutti una base di giocatori top nei vari ruoli. Naturalmente le squadre potranno spendere cifre molto diverse tra loro: qualcuno potrebbe investire molti crediti per aggiudicarsi un giocatore di grande livello, mentre qualcun altro potrebbe puntare su un giocatore meno costoso. Se nessuna delle preferenze indicate dovesse andare a buon fine, verrà assegnato un giocatore ancora disponibile nella lista, al prezzo minimo.
+
+La gestione del budget sarà quindi fondamentale già dalla prima fase. Fare un'offerta più alta aumenta le possibilità di ottenere il giocatore desiderato, ma significa anche avere meno crediti a disposizione nelle fasi successive. Al contrario, riuscire a spendere poco permetterà di arrivare alla seconda fase con un budget maggiore.
+
+RISPETTATE IL BUDGET, per cortesia non sforate il budget. Se avete 200 milioni, e dovete compilare 4 liste, non mettetemi 24 preferenze a 200 milioni. Se volete, vi spiego un segreto per non sforare: una volta decise le preferenze di tutte le liste, prima di inserirle, fate una somma veloce; prendete l'offerta più onerosa che avete fatto in ciascuna lista (il portiere per cui avete offerto di più, il difensore tra i top per cui avete offerto di più, quello tra i semi-top e quello della terza lista) e sommatele. Se siete dentro al budget va bene. Nulla vi vieta di fare un'offerta monstre per i difensori top e offrire 6 volte 100 crediti per 6 difensori top diversi (che so Dimarco 100, Wesley 100, Bremer 100 - perché comunque ve ne verrà assegnato solo uno). Questo vorrà dire però che le offerte per giocatori di altre liste ne risentiranno.
+
+SECONDA FASE - Parte Martedì alle 12
+La seconda fase sarà invece un'asta a busta chiusa libera. Una volta assegnati i top 40 o top 60 dei vari ruoli, si potrà puntare sui giocatori rimasti, senza vincoli di ruolo. Ogni squadra potrà acquistare fino a 6 giocatori, con 2 giri di asta previsti (divisi anche stavolta su due giorni, da mezzogiorno di martedì fino a mezzogiorno di giovedì). L'offerta minima sarà la quotazione del giocatore e il budget utilizzabile sarà esclusivamente quello rimasto dalla prima fase +40 crediti.
+
+Questa seconda fase sarà quindi l'occasione per acquistare eventuali semi-top rimasti, giocatori preferiti, scommesse, possibili titolari, sostituti dei top già acquistati, talismani oppure semplicemente giocatori che si ritiene possano essere delle buone occasioni. Sarà quindi una fase molto più libera e strategica, nella quale ogni squadra dovrà decidere come utilizzare i crediti che è riuscita a conservare.
+
+Qui non conteranno ordini di preferenze ma solo l'offerta più alta. Calibrare il budget sarà semplice, la somma delle 6 offerte non dovrà superare il vostro budget
+
+Terza Fase - Automatico
+Infine, nella terza fase, verranno completate le rose con tutti i giocatori ancora disponibili. Non ci sarà un'ulteriore asta: sarà l'admin a distribuire i giocatori rimanenti, cercando di farlo nel modo più equo possibile. La distribuzione partirà dalle squadre che avranno conservato più crediti alla fine della seconda fase.
+
+In sostanza, la strategia dell'asta sarà tutta basata sulla gestione del budget: nella prima fase bisognerà cercare di costruire una buona base di giocatori top senza spendere eccessivamente, nella seconda si potranno sfruttare i crediti rimasti per completare la squadra con giocatori scelti liberamente, mentre nella terza fase l'admin completerà le rose con i giocatori ancora disponibili.

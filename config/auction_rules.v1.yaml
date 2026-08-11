@@ -1,8 +1,9 @@
 schema_version: 1
 ruleset_id: fantacalcio-asta-2026-v1
 status: working_current
-effective_from: 2026-08-10
+effective_from: 2026-08-11
 supersedes: historical-three-phase-regulation
+source: "Recap regole admin, WhatsApp 2026-08-11 (docs/archive/Recap_regole_asta_admin_20260811.txt)"
 
 league:
   teams: 20
@@ -31,36 +32,66 @@ auction:
   official_pool_authority: admin_import
   model_ranking_is_official_pool: false
   rounds:
+    # G1/G2: sealed bid against admin-published ranked lists, 6 preferences per
+    # list, each with its own bid. Resolution priority: preference rank first,
+    # then bid amount (confirmed by admin recap, verbatim: "dando precedenza
+    # prima alla preferenza espressa e poi all'offerta").
     - id: G1
       order: 1
-      mode: sealed_bid
+      mode: sealed_bid_list
       budget_increment: 200
       budget_available: "200"
       pools:
         - goalkeeper_blocks
         - defenders_top_1_60
+      preferences_per_list: 6
+      resolution_priority: preference_rank_then_bid
+      minimum_bid_source: list_stated_minimum
+      fallback_on_no_preference_won: assign_available_list_player_at_minimum_price
     - id: G2
       order: 2
-      mode: sealed_bid
+      mode: sealed_bid_list
       budget_increment: 100
       budget_available: "remaining_G1 + 100"
       pools:
         - midfielders_top_1_60
         - forwards_top_1_40
+      preferences_per_list: 6
+      resolution_priority: preference_rank_then_bid
+      minimum_bid_source: list_stated_minimum
+      fallback_on_no_preference_won: assign_available_list_player_at_minimum_price
+    # G3/G4: sealed bid, free choice (no lists/preferences, no role
+    # constraint), highest bid wins. NOT a live/open auction — corrected
+    # 2026-08-11, see ADR-2026-013 (previously mislabeled open_auction).
     - id: G3
       order: 3
-      mode: open_auction
+      mode: sealed_bid_free
       budget_increment: 40
       budget_available: "remaining_G2 + 40"
       pools:
         - remaining_players
+      max_players_this_phase: 6
+      minimum_bid_source: player_quotazione
+      resolution_priority: highest_bid
     - id: G4
       order: 4
-      mode: open_auction
+      mode: sealed_bid_free
       budget_increment: 0
       budget_available: "remaining_G3"
       pools:
         - remaining_players
+      max_players_this_phase: 6
+      minimum_bid_source: player_quotazione
+      resolution_priority: highest_bid
+
+# Not a bidding round: the admin manually assigns all still-unassigned players
+# to fill remaining roster slots, no further offers. Order: teams with the most
+# leftover credits after G4 go first ("più equamente possibile" — admin recap
+# does not specify the exact fairness algorithm beyond this ordering).
+post_auction_completion:
+  method: admin_manual_assignment
+  team_order: most_remaining_credits_first
+  no_further_bidding: true
 
 runtime_invariants:
   require_versioned_config: true
@@ -73,8 +104,12 @@ runtime_invariants:
   infeasibility_requires_explanation: true
 
 uncertain_historical_fields:
-  sealed_bid_preference_count: null
+  # Resolved 2026-08-11 by admin recap (kept here as a record; see ADR-2026-013):
+  sealed_bid_preference_count: 6
+  automatic_fallback_assignment: assign_available_list_player_at_minimum_price
+  # Still open — the recap doesn't specify a tie-break for two teams giving the
+  # *same* player the *same* preference rank with the *same* bid amount (rare,
+  # but not impossible with round-number bids). Do not guess; block that branch.
   sealed_bid_tie_breaker: null
-  minimum_bid_source: null
-  automatic_fallback_assignment: null
-  note: "Define through an approved ADR before implementing these branches."
+  minimum_bid_source: null  # superseded by per-round minimum_bid_source fields above; kept null at top level to avoid ambiguity
+  note: "sealed_bid_tie_breaker remains genuinely undefined. Define through an approved ADR before implementing that branch."

@@ -2,25 +2,25 @@
 
 Compilare prima di ogni modifica significativa e mantenere lo scope a una singola unità verificabile.
 
-- Obiettivo: `TODO` — secondo blocco M2 (stimatore voto giocatore) completato, vedi Progresso.
-- Perché ora: `TODO`
-- In scope: `TODO`
-- Fuori scope: `TODO`
-- Documenti canonici da leggere: `TODO`
-- File/simboli probabilmente coinvolti: `TODO`
-- Criteri di accettazione: `TODO`
-- Comandi test/quality: `TODO`
-- Data cutoff/snapshot/`as_of`: `TODO o N/A`
-- Seed, se applicabile: `TODO`
-- Delegazione: vietata | Gemini per `TODO` | subagente `TODO` per `TODO`
-- Decisioni aperte/blocchi: `TODO`
+- Obiettivo: integrare `Pv` (partite a voto, statistiche stagionali Fantacalcio.it) come segnale di partecipazione nel modello voto giocatore (M2).
+- Perché ora: recap regole asta ricevuto e già integrato (ADR-2026-013, config corretta); `Pv` è un segnale di partecipazione stagionale reale scoperto integrando quotazioni/statistiche, non ancora usato nel modello.
+- In scope:
+  - Calcolare tasso di partecipazione stagionale (`Pv` / giornate disputate fino a quel punto) per giocatore, walk-forward (mai usando `Pv` finale di fine stagione per predire l'inizio stagione).
+  - Usarlo come feature/filtro nel modello voto (es. pesare o segnalare bassa affidabilità per giocatori con tasso di partecipazione basso) o come output separato (probabilità di essere schierato, approssimata dal tasso storico).
+  - Restare onesti sul limite: `Pv` è un aggregato *a fine stagione* nel file statistiche attuale — per un vero walk-forward servirebbe `Pv` calcolato giornata per giornata, che non abbiamo. Documentare esplicitamente questa approssimazione.
+- Fuori scope: sostituire il bisogno di una fonte lineup granulare (resta comunque preferibile quando disponibile).
+- Documenti canonici da leggere: `docs/DATA_AND_MODELING.md`, `docs/CURRENT_TASK.md` (storico), ADR-2026-012.
+- File probabilmente coinvolti: `src/fantacalcio/modeling/player_voto.py` o nuovo modulo `participation.py`, test correlati.
+- Criteri di accettazione: approssimazione dichiarata esplicitamente nel codice/report; nessun uso di `Pv` di fine stagione per predire giornate precedenti senza flag esplicito.
+- Comandi test/quality: `pytest -q`.
+- Data cutoff/snapshot/`as_of`: statistiche stagione 2025/26 (parziale, aggiornate alla data di estrazione dell'admin).
+- Seed: n/a.
+- Delegazione: vietata.
+- Decisioni aperte/blocchi: nessuno.
 
 ## Progresso
 
-- Stato: **blocco stimatore voto giocatore completato**.
-- Ultimo commit/stato verificato: sessione 2026-08-10, `pytest -q` → 111 passed.
-- Sintesi:
-  - Stimatore Empirical-Bayes (`src/fantacalcio/modeling/player_voto.py`), walk-forward su 59.306 righe reali (5 stagioni, pannello "Fantacalcio").
-  - Batte tutte le baseline su MAE complessivo (0.4137 vs 0.4154/0.4494/0.5670), ma con margine piccolo e non uniforme per ruolo (leggermente peggio della media-ruolo sul ruolo C). ADR-2026-012, dichiarato onestamente incluso il limite di tuning-on-test sul parametro `prior_games`.
-  - Modello di partecipazione/minutaggio dichiaratamente fuori scope: dati voti non includono l'intera rosa, solo i giocatori votati.
-- Prossima azione possibile: nested cross-validation per `prior_games` prima di un uso reale in decisioni d'asta; oppure procedere al blocco successivo di M2 (scoring engine Monte Carlo che applica il regolamento alle distribuzioni) o valutare se sbloccare il modello di partecipazione (richiede fonte lineup completa, vedi M1).
+- Stato: not started (blocco precedente — correzione regole d'asta — completato, vedi sotto).
+- Ultimo commit/stato verificato: sessione 2026-08-11.
+- Sintesi blocco appena chiuso: recap regole admin integrato. Corretto un errore reale: G3/G4 erano configurati come "asta aperta/live" ma il regolamento vero le descrive come busta chiusa libera (vince l'offerta più alta, no asta dal vivo). `config/auction_rules.v1.yaml`, `docs/AUCTION_RULES.md`, `docs/OPEN_QUESTIONS.md` aggiornati; ADR-2026-013. Risolti: numero preferenze (6), priorità risoluzione (preferenza poi offerta), fallback G1/G2, minimo offerta G3/G4. Ancora aperti: tie-breaker per pari preferenza+pari offerta, soglie esatte liste (arrivano venerdì), formato file admin.
+- Prossima azione: implementare l'integrazione di `Pv` nel modello voto/partecipazione.
