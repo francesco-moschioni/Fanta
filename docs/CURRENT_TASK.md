@@ -2,23 +2,23 @@
 
 Compilare prima di ogni modifica significativa e mantenere lo scope a una singola unità verificabile.
 
-- Obiettivo: `TODO` — assegnazione pool G1-G4 completata (ADR-2026-021), vedi Progresso.
-- Perché ora: `TODO`
-- In scope: `TODO`
-- Fuori scope: `TODO`
-- Documenti canonici da leggere: `TODO`
-- File/simboli probabilmente coinvolti: `TODO`
-- Criteri di accettazione: `TODO`
-- Comandi test/quality: `TODO`
-- Data cutoff/snapshot/`as_of`: `TODO o N/A`
-- Seed, se applicabile: `TODO`
-- Delegazione: vietata | Gemini per `TODO` | subagente `TODO` per `TODO`
-- Decisioni aperte/blocchi: `TODO`
+- Obiettivo: raccomandazione di offerta massima ("quanto offrire ora"), collegando il ledger d'asta vivo (M0) al VAR (M3) — prima versione, dichiaratamente semplificata.
+- Perché ora: è il pezzo che rende lo strumento realmente utilizzabile durante l'asta, non solo un elenco di valutazioni statiche.
+- In scope:
+  - Metodologia standard da aste fantasy ("dollar rule"): riserva 1 credito per ogni slot di rosa ancora da riempire (tranne quello che si sta per comprare), il budget discrezionale residuo si distribuisce proporzionalmente al VAR positivo tra i giocatori ancora disponibili nel pool/round.
+  - Stato squadra (budget residuo, slot rimanenti, giocatori già assegnati) letto dal ledger vivo via replay (`src/fantacalcio/domain.py`), mai da uno snapshot statico.
+  - Dichiarare esplicitamente cosa manca rispetto al layer forecast-to-bid completo di `docs/DATA_AND_MODELING.md`: nessuna modellazione della domanda avversari, nessuna inflazione osservata di mercato, nessun aggiustamento per fit di modulo/rischio.
+- Fuori scope: apprendimento di mercato/domanda avversari (M5), fit rosa/moduli (richiede UX M4), inflazione osservata (serve storico aste reali che non abbiamo ancora).
+- Documenti canonici: `docs/DATA_AND_MODELING.md` (forecast-to-bid layer), `src/fantacalcio/domain.py` (ledger/replay), ADR-2026-019/021.
+- File probabilmente coinvolti: `src/fantacalcio/auction/bid_recommendation.py`, test, script dimostrativo con ledger sintetico.
+- Criteri di accettazione: budget/slot letti dal ledger via replay, mai hardcoded; formula dichiarata come standard/semplificata, non presentata come definitiva; test su scenario sintetico + applicazione dimostrativa.
+- Comandi test/quality: `pytest -q`.
+- Seed: n/a (deterministico dato lo stato del ledger).
+- Delegazione: vietata.
+- Decisioni aperte/blocchi: nessuno per lo scope sopra (l'asta reale non è ancora iniziata, quindi il ledger di dimostrazione sarà sintetico).
 
 ## Progresso
 
-- Stato: **assegnazione pool G1-G4 completata** (ADR-2026-021).
-- Ultimo commit/stato verificato: sessione 2026-08-11, `pytest -q` → 191 passed.
-- Sintesi: `src/fantacalcio/auction/round_pools.py`, soglie lette da config (mai hardcoded), pareggi al cutoff mai spezzati arbitrariamente (nessuna regola di tie-break confermata). Marcato `provisional`, mai `official`. Applicato al roster 2026/27 reale: 59P/61D in G1, 60C/40A in G2, 278 in G3/G4.
-- **Stato complessivo del progetto**: M0 ✅, M1 ✅, M2 ✅ (forza squadra, voto, partecipazione, scoring engine, Monte Carlo), M3 in corso (VAR ✅, pool G1-G4 ✅). Restano: collegamento al ledger d'asta vivo per raccomandazioni round-per-round, fit con rosa utente/moduli, budget shadow price, domanda avversari, apprendimento di mercato (M5), UX (M4).
-- Prossima azione naturale: collegare VAR+pool al ledger d'asta (M0) per produrre una vera raccomandazione "quanto offrire ora, dato quello che è già stato assegnato" — il pezzo che rende lo strumento realmente utilizzabile in asta.
+- Stato: not started
+- Ultimo commit/stato verificato: `c62b2d0`
+- Prossima azione: implementare `src/fantacalcio/auction/bid_recommendation.py`.
