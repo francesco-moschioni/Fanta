@@ -22,11 +22,28 @@ import numpy as np
 import pandas as pd
 
 from fantacalcio.modeling.player_voto import load_player_matchday_panel
+from fantacalcio.modeling.team_matchday import build_all_seasons
 from fantacalcio.scoring.engine import PlayerMatchdayEvents, score_fantavoto
 
 REPORT_PATH = Path("data/staged/fantacalcio_voti_manual/_scoring_engine_validation.md")
 STATISTICHE_DIR = Path("data/staged/fantacalcio_statistiche_manual")
+QUOTAZIONI_DIR = Path("data/staged/fantacalcio_quotazioni_manual")
 SEASONS = ["2021_22", "2022_23", "2023_24", "2024_25", "2025_26"]
+
+
+def _load_player_team_by_season() -> pd.DataFrame:
+    """player_code, season_label -> team_name, from each season's own quotazioni
+    snapshot. Approximation, documented: reflects team at listone-publication time,
+    not mid-season transfers — a player who moved clubs during the season keeps
+    their season-start team for this join."""
+    frames = []
+    for season in SEASONS:
+        path = QUOTAZIONI_DIR / f"{season}.csv"
+        if path.is_file():
+            df = pd.read_csv(path)[["player_code", "team_name"]].copy()
+            df["season_label"] = season
+            frames.append(df)
+    return pd.concat(frames, ignore_index=True)
 
 
 def main() -> None:
@@ -34,9 +51,26 @@ def main() -> None:
     voti = load_player_matchday_panel()
     rated = voti[~voti["voto_no_vote"]].copy()
 
+    print("Joining team affiliation (per-season quotazioni snapshot)...")
+    player_team = _load_player_team_by_season()
+    rated = rated.merge(player_team, on=["player_code", "season_label"], how="left")
+
+    print("Building team-matchday results from football-data.co.uk...")
+    team_matchday = build_all_seasons().frame
+    rated = rated.merge(
+        team_matchday[["team_name", "season_label", "matchday", "goals_conceded"]].rename(
+            columns={"goals_conceded": "team_goals_conceded"}
+        ),
+        on=["team_name", "season_label", "matchday"],
+        how="left",
+    )
+    n_with_team_data = rated["team_goals_conceded"].notna().sum()
+    print(f"{n_with_team_data}/{len(rated)} rows ({n_with_team_data / len(rated):.1%}) matched a team result.")
+
     print(f"Scoring {len(rated)} rated player-matchday rows...")
     scores = []
     for row in rated.itertuples(index=False):
+        team_conceded = row.team_goals_conceded
         events = PlayerMatchdayEvents(
             role=row.role,
             played=True,
@@ -47,6 +81,7 @@ def main() -> None:
             yellow_cards=int(row.yellow_cards),
             red_cards=int(row.red_cards),
             penalties_missed=int(row.penalties_missed),
+            team_goals_conceded=int(team_conceded) if pd.notna(team_conceded) else None,
         )
         scores.append(score_fantavoto(row.voto, events))
     rated["our_fantavoto"] = scores
@@ -60,10 +95,15 @@ def main() -> None:
         "",
         "Our engine only includes the individual-confirmed components (goal, assist "
         "[approximated, see engine docstring], goal conceded, clean sheet, own goal, "
-        "cards, penalty missed). It excludes defense modifier, performance bonus, "
-        "fair play, under-11 relief, and captain bonus — all team-level or data-"
-        "unavailable per docs/CURRENT_TASK.md scope. The gap below is a measurement "
-        "of how much those excluded components matter, not an error to hide.",
+        "cards, penalty missed). Clean sheet / goal-conceded is goalkeeper-only: a "
+        "real team-result join (football-data.co.uk, via team_name + season + "
+        "matchday) is used when available (96.6% coverage) instead of the individual "
+        "field, but extending this component to defenders was tested and reverted — "
+        "it made agreement with real Fm much worse (see engine.py docstring, "
+        "'Tested-and-reverted'). Still excludes defense modifier, performance bonus, "
+        "fair play, under-11 relief, and captain bonus — all rule-unconfirmed or "
+        "data-unavailable per docs/CURRENT_TASK.md scope. The gap below measures how "
+        "much those excluded components matter, not an error to hide.",
         "",
         "| Season | Players matched | Mean our_fantavoto | Mean their Fm | Mean gap (theirs - ours) | Correlation |",
         "|---|---:|---:|---:|---:|---:|",

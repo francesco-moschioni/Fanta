@@ -35,24 +35,48 @@ class TestScorePlayerMatchday:
         breakdown = score_player_matchday(_events(assists=3))
         assert breakdown.assist_points == 3.0
 
-    def test_goal_conceded_worth_minus_one(self):
-        breakdown = score_player_matchday(_events(role="D", goals_conceded=2))
+    def test_goal_conceded_worth_minus_one_for_goalkeeper_individual_data(self):
+        breakdown = score_player_matchday(_events(role="P", goals_conceded=2))
         assert breakdown.goal_conceded_points == -2.0
+
+    def test_defender_gets_no_goal_conceded_malus_ever(self):
+        # Empirically tested (2026-08-11, see engine.py docstring "Tested-and-
+        # reverted"): giving defenders an individual goal-conceded malus/clean-
+        # sheet bonus, even from a real team-result join, made agreement with
+        # Fantacalcio.it's real Fm much worse. This component is goalkeeper-only.
+        breakdown = score_player_matchday(_events(role="D", goals_conceded=2, team_goals_conceded=2))
+        assert breakdown.goal_conceded_points == 0.0
+        assert breakdown.clean_sheet_points == 0.0
+
+    def test_defender_gets_no_clean_sheet_even_with_team_data(self):
+        breakdown = score_player_matchday(_events(role="D", team_goals_conceded=0))
+        assert breakdown.clean_sheet_points == 0.0
+        assert breakdown.goal_conceded_points == 0.0
 
     def test_clean_sheet_for_goalkeeper(self):
         breakdown = score_player_matchday(_events(role="P", goals_conceded=0))
         assert breakdown.clean_sheet_points == 1.0
 
-    def test_no_clean_sheet_bonus_for_defender_midfielder_or_forward(self):
-        # Defenders excluded deliberately: goals_conceded isn't a reliable signal
-        # for them in this data source (see engine.py's _CLEAN_SHEET_ROLES comment).
-        for role in ("D", "C", "A"):
-            breakdown = score_player_matchday(_events(role=role, goals_conceded=0))
+    def test_no_clean_sheet_bonus_for_midfielder_or_forward(self):
+        for role in ("C", "A"):
+            breakdown = score_player_matchday(_events(role=role, goals_conceded=0, team_goals_conceded=0))
             assert breakdown.clean_sheet_points == 0.0
 
     def test_no_clean_sheet_for_goalkeeper_if_conceded(self):
         breakdown = score_player_matchday(_events(role="P", goals_conceded=1))
         assert breakdown.clean_sheet_points == 0.0
+
+    def test_team_data_overrides_unreliable_individual_field_for_goalkeeper(self):
+        # Team data disagrees with the (normally reliable) individual field for P;
+        # team data should win since it's a real match-result join.
+        breakdown = score_player_matchday(_events(role="P", goals_conceded=0, team_goals_conceded=1))
+        assert breakdown.clean_sheet_points == 0.0
+        assert breakdown.goal_conceded_points == -1.0
+
+    def test_goalkeeper_team_data_takes_priority_over_individual_field(self):
+        breakdown = score_player_matchday(_events(role="P", goals_conceded=3, team_goals_conceded=0))
+        assert breakdown.clean_sheet_points == 1.0
+        assert breakdown.goal_conceded_points == 0.0
 
     def test_own_goal_worth_minus_two(self):
         breakdown = score_player_matchday(_events(own_goals=1))

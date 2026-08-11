@@ -27,6 +27,19 @@ Blocked (never computed, raise ScoringComponentBlocked):
   - captain bonus: needs to know who was captain; not present in the data. Data gap.
   - fair play, defense modifier, performance bonus, under-11 relief: team-level
     modifiers whose exact formula is still open in docs/OPEN_QUESTIONS.md. Rule gap.
+
+Tested-and-reverted (2026-08-11): extending the goal-conceded malus / clean-sheet
+bonus to defenders using a real team-result join (football-data.co.uk) was tried
+and made agreement with Fantacalcio.it's real Fm dramatically *worse*
+(correlation dropped from ~0.5 to ~0.2-0.4, mean gap flipped from -0.15/-0.23 to
++0.75/+0.99) — empirical evidence that this league's defender scoring does NOT
+apply an individual -1-per-goal-conceded malus, matching common Fantacalcio
+convention: defenders' defensive contribution comes through the team-level
+defense modifier (still blocked, formula unconfirmed), not an individual malus.
+Reverted to goalkeeper-only for both goal-conceded and clean-sheet. The team-
+result join (src/fantacalcio/modeling/team_matchday.py) is still used — it's more
+complete than the individual GK field (matches ~97% of rows vs. an unknown gap in
+the individual field) — just not extended to defenders.
 """
 
 from __future__ import annotations
@@ -45,11 +58,12 @@ class PlayerMatchdayEvents:
     played: bool
     goals_scored: int = 0
     assists: int = 0
-    goals_conceded: int = 0
+    goals_conceded: int = 0  # individual field; reliable for P, NOT for D (see below)
     own_goals: int = 0
     yellow_cards: int = 0
     red_cards: int = 0
     penalties_missed: int = 0
+    team_goals_conceded: int | None = None  # from a real match-result join; reliable for any role
 
 
 @dataclass(frozen=True)
@@ -84,15 +98,11 @@ _YELLOW_CARD_POINTS = -0.5
 _RED_CARD_POINTS = -1.0
 _PENALTY_MISSED_POINTS = -3.0
 
+# Goalkeeper only. Empirically tested extending this to defenders using a real
+# team-result join and it made agreement with Fantacalcio.it's real Fm much worse
+# (see module docstring, "Tested-and-reverted") — this league does not appear to
+# apply an individual goal-conceded malus to defenders.
 _CLEAN_SHEET_ROLES = frozenset({"P"})
-# Defenders excluded (data check, 2026-08-11): the voti export's `goals_conceded`
-# field is populated almost exclusively for goalkeepers (71% nonzero) and is
-# essentially always 0 for defenders (0.005% nonzero) — not because their team
-# usually kept a clean sheet, but because this source doesn't track it at the
-# individual-defender level. Treating that as a real clean sheet signal wrongly
-# credited nearly every defender's every matchday, inflating scores well above
-# Fantacalcio.it's own Fm. A real defender clean-sheet bonus needs team-level
-# match results (available from football-data.co.uk, not yet joined here).
 
 
 def score_player_matchday(events: PlayerMatchdayEvents) -> ScoreBreakdown:
@@ -103,12 +113,20 @@ def score_player_matchday(events: PlayerMatchdayEvents) -> ScoreBreakdown:
     if not events.played:
         return ScoreBreakdown(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
 
-    clean_sheet = events.role in _CLEAN_SHEET_ROLES and events.goals_conceded == 0
+    if events.role in _CLEAN_SHEET_ROLES:  # goalkeeper only
+        # Prefer the real team-result join (more complete, ~97% coverage) over the
+        # individual field when both are available; either way this component
+        # never applies to non-goalkeepers (see module docstring).
+        conceded_for_scoring = events.team_goals_conceded if events.team_goals_conceded is not None else events.goals_conceded
+        clean_sheet = conceded_for_scoring == 0
+    else:
+        conceded_for_scoring = 0
+        clean_sheet = False
 
     return ScoreBreakdown(
         goal_points=_GOAL_POINTS * events.goals_scored,
         assist_points=_ASSIST_POINTS * events.assists,
-        goal_conceded_points=_GOAL_CONCEDED_POINTS * events.goals_conceded,
+        goal_conceded_points=_GOAL_CONCEDED_POINTS * conceded_for_scoring,
         clean_sheet_points=_CLEAN_SHEET_POINTS if clean_sheet else 0.0,
         own_goal_points=_OWN_GOAL_POINTS * events.own_goals,
         card_points=_YELLOW_CARD_POINTS * events.yellow_cards + _RED_CARD_POINTS * events.red_cards,

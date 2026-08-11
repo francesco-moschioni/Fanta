@@ -2,7 +2,7 @@
 
 Compilare prima di ogni modifica significativa e mantenere lo scope a una singola unità verificabile.
 
-- Obiettivo: `TODO` — motore deterministico di scoring (componenti individuali) completato, vedi Progresso.
+- Obiettivo: `TODO` — join risultati partita per porta-inviolata completato (ADR-2026-017), vedi Progresso.
 - Perché ora: `TODO`
 - In scope: `TODO`
 - Fuori scope: `TODO`
@@ -17,7 +17,7 @@ Compilare prima di ogni modifica significativa e mantenere lo scope a una singol
 
 ## Progresso
 
-- Stato: **motore di scoring individuale completato e validato** (ADR-2026-016).
-- Ultimo commit/stato verificato: sessione 2026-08-11, `pytest -q` → 153 passed.
-- Sintesi: `src/fantacalcio/scoring/engine.py` implementa le componenti individuali confermate (gol, assist approssimato, gol subito/porta inviolata solo portiere, cartellini, autogol, rigore sbagliato). Trovato e corretto un bug reale durante la validazione: porta inviolata veniva erroneamente assegnata anche ai difensori per un campo dati non affidabile per quel ruolo — corretto, correlazione con `Fm` reale migliorata da ~0.35-0.44 a ~0.47-0.57. Componenti non confermate (rigore parato/procurato, gol pareggio/vittoria, capitano, fair play, modificatore difesa, bonus rendimento, bonus inferiorità) esplicitamente bloccate con `ScoringComponentBlocked`, mai inventate.
-- Prossima azione possibile: join con risultati partita (football-data.co.uk) per abilitare porta-inviolata-difensori e modificatore difesa; poi motore Monte Carlo per prevedere giornate future (non solo replay di eventi storici).
+- Stato: **join risultati partita completato** (ADR-2026-017).
+- Ultimo commit/stato verificato: sessione 2026-08-11, `pytest -q` → 162 passed.
+- Sintesi: `src/fantacalcio/modeling/team_matchday.py` deriva gol per squadra-giornata da football-data.co.uk (giornata dedotta dal rank cronologico, verificato contro OpenFootball). Provato a estendere porta-inviolata/gol-subito ai difensori con questo dato — **peggiorava** l'accordo con `Fm` reale, scartato con evidenza empirica (non un'assunzione). Il portiere invece beneficia del join (copertura 96,6% vs dato individuale parziale): correlazione con `Fm` reale migliorata a 0,51-0,60.
+- Prossima azione possibile: modificatore difesa (formula ancora bloccata in `OPEN_QUESTIONS.md`, ma ora abbiamo il join squadra-giornata pronto per quando sarà confermata); oppure motore Monte Carlo per giornate future.
