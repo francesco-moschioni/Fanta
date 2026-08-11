@@ -169,9 +169,8 @@ if submitted:
 
             if domain_role is Role.GK:
                 st.error(
-                    "Blocco portieri (3 giocatori dello stesso club, un solo evento): "
-                    "non ancora gestito da questo form. Registra manualmente via "
-                    "script se necessario."
+                    "I portieri si registrano come blocco di 3 (un solo evento, un solo "
+                    "prezzo): usa il modulo **Registra blocco portieri** qui sotto, non questo."
                 )
             else:
                 candidate = AssignmentEvent(
@@ -194,6 +193,77 @@ if submitted:
                     append_event(ledger_conn, candidate)
                     st.success(f"Registrato: {winning_team} — {player['display_name']} — {amount} crediti — {round_id}")
                     st.rerun()
+
+st.divider()
+st.subheader("Registra blocco portieri")
+st.caption(
+    f"I portieri si comprano come blocco di {ruleset.roster.goalkeeper_block_size}, un solo "
+    "evento e un solo prezzo per il blocco intero (sempre in G1, unico round con il pool "
+    "`goalkeeper_blocks`)."
+    + (" Regola: devono essere dello stesso club (avviso, non ancora imposto automaticamente)." if ruleset.roster.goalkeeper_same_club else "")
+)
+
+with st.form("register_gk_block"):
+    gk_team = st.selectbox("Squadra vincitrice", TEAM_IDS, key="gk_team")
+    gk_names = [
+        st.text_input(f"Portiere {i + 1} (nome)", key=f"gk_name_{i}")
+        for i in range(ruleset.roster.goalkeeper_block_size)
+    ]
+    gk_amount = st.number_input("Prezzo pagato per il blocco intero (crediti)", min_value=0, step=1, key="gk_amount")
+    gk_submitted = st.form_submit_button("Cerca e registra blocco")
+
+if gk_submitted:
+    if any(not name for name in gk_names):
+        st.error(f"Inserisci tutti i {ruleset.roster.goalkeeper_block_size} nomi.")
+    else:
+        resolved = []
+        errors = []
+        for name in gk_names:
+            matches = search_players(player_conn, name_query=name, role="P")
+            if matches.empty:
+                errors.append(f"Nessun portiere trovato per {name!r}.")
+            elif len(matches) > 1:
+                errors.append(
+                    f"{len(matches)} portieri corrispondono a {name!r}: "
+                    f"{', '.join(matches['display_name'].tolist())}. Restringi la ricerca."
+                )
+            else:
+                resolved.append(matches.iloc[0])
+
+        if errors:
+            for e in errors:
+                st.error(e)
+        elif len({p["player_code"] for p in resolved}) != len(resolved):
+            st.error("Hai indicato lo stesso portiere più di una volta.")
+        else:
+            team_names = {p["team_name"] for p in resolved}
+            if ruleset.roster.goalkeeper_same_club and len(team_names) > 1:
+                st.warning(
+                    f"Attenzione: i portieri selezionati sono di club diversi ({', '.join(team_names)}) "
+                    f"— la regola richiede lo stesso club. Registrato comunque, ma verifica prima di "
+                    "confermarlo con l'admin."
+                )
+            gk_candidate = AssignmentEvent(
+                event_id=uuid.uuid4().hex,
+                ts=datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
+                round_id="G1",
+                team_id=gk_team,
+                pool_id="goalkeeper_blocks",
+                role=Role.GK,
+                item=AssignmentItem(player_ids=tuple(str(p["player_code"]) for p in resolved)),
+                amount=int(gk_amount),
+                source="admin_result_manual_entry",
+                author="utente",
+            )
+            try:
+                replay(ruleset, load_events(ledger_conn) + [gk_candidate])
+            except (DomainError, ConfigError) as exc:
+                st.error(f"Evento non valido, non registrato: {exc}")
+            else:
+                append_event(ledger_conn, gk_candidate)
+                names = ", ".join(p["display_name"] for p in resolved)
+                st.success(f"Registrato blocco portieri: {gk_team} — {names} — {gk_amount} crediti")
+                st.rerun()
 
 st.divider()
 st.subheader("Bonus logo personalizzato")
