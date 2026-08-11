@@ -229,3 +229,13 @@ La decisione approvata più recente e applicabile prevale. Appendere; non riscri
 - Rationale: le soglie esatte di pareggio non hanno una regola di tie-break confermata (`docs/OPEN_QUESTIONS.md`); invece di inventarne una, tutti i giocatori a pari valore al cutoff vengono inclusi nel pool superiore (verificato: 61 difensori in G1 invece di esattamente 60, per un pareggio al 60° posto). Applicato al roster 2026/27 reale: 59 portieri, 61 difensori, 60 centrocampisti, 40 attaccanti nei pool G1/G2, 278 giocatori in G3/G4.
 - Conseguenze: `scripts/run_m3_replacement_values.py` mostra la ripartizione per pool e il round di ogni giocatore nella classifica VAR. 191 test passano. Prossimo passo naturale: collegare questi pool al ledger d'asta vivo (M0) per un vero motore di raccomandazione round-per-round.
 - Approvato da: project owner
+
+### ADR-2026-022 — Raccomandazione di offerta massima, collegata al ledger vivo
+
+- Data: 2026-08-11
+- Stato: approved
+- Scope: auction
+- Decisione: `src/fantacalcio/auction/bid_recommendation.py` calcola un'offerta massima raccomandata usando la formula standard delle aste fantasy ("dollar rule": riserva 1 credito per ogni slot di rosa ancora da riempire tranne quello corrente; il budget discrezionale residuo si distribuisce proporzionalmente al VAR positivo tra i giocatori ancora disponibili nel pool). Budget e slot rimanenti sono letti dal replay del ledger (`src/fantacalcio/domain.py`), mai da uno snapshot statico — la raccomandazione cambia in tempo reale con ciò che viene assegnato, sia dagli avversari sia dalla propria squadra.
+- Rationale: dichiarata esplicitamente come prima versione semplificata, non il layer forecast-to-bid completo di `docs/DATA_AND_MODELING.md` (mancano domanda avversari modellata, inflazione di mercato osservata, fit di modulo/rischio — tutti richiedono dati che non abbiamo ancora, es. uno storico di aste reali). Bug reale trovato durante i test: gli ID giocatore nel ledger sono stringhe (`AssignmentItem.player_ids: tuple[str,...]`) mentre nel pool VAR sono interi — il confronto silenziosamente non escludeva mai i giocatori già assegnati. Corretto normalizzando a stringa prima del confronto.
+- Conseguenze: `scripts/run_m3_bid_recommendation_demo.py` dimostra su dati VAR reali (pool difensori G1 2026/27) che la raccomandazione sale quando i rivali comprano le alternative migliori e scende quando la propria squadra consuma budget/slot — comportamento corretto per uno strumento da usare live in asta. 201 test passano.
+- Approvato da: project owner
