@@ -16,6 +16,7 @@ from pathlib import Path
 import pandas as pd
 
 from fantacalcio.auction.replacement import add_value_above_replacement, compute_replacement_levels
+from fantacalcio.auction.round_pools import assign_round_pools
 from fantacalcio.config import load_ruleset
 from fantacalcio.modeling.data_quality import (
     FULL_HISTORY_THRESHOLD_GAMES,
@@ -39,6 +40,7 @@ def main() -> None:
     levels = compute_replacement_levels(pool, ruleset)
     result = add_value_above_replacement(pool, levels)
     result = add_data_quality_tier(result)
+    result = assign_round_pools(result, ruleset)
     result = result.sort_values("var_mean", ascending=False)
     result.to_csv(CSV_PATH, index=False)
 
@@ -74,10 +76,22 @@ def main() -> None:
             "4 forwards if supply runs out).",
         ]
 
-    lines += ["", "## Top 15 by value above replacement", "", "| Player | Role | Team | Sim mean | Replacement | VAR mean | VAR range (P10-P90) | Data quality |", "|---|---|---|---:|---:|---:|---|---|"]
+    lines += ["", "## Round pools (provisional — our ranking, NOT the real admin list)", "", "", "| Round | Pool | Players |", "|---|---|---:|"]
+    for (round_pool, pool_name), g in result.groupby(["round_pool", "list_pool_name"]):
+        lines.append(f"| {round_pool} | {pool_name} | {len(g)} |")
+    lines.append("")
+    lines.append(
+        "The real admin lists arrive via Google Form (see "
+        "docs/archive/Recap_regole_asta_admin_20260811.txt) and will differ from this "
+        "ranking — this is `list_state=provisional`, ours, not `official`, theirs. "
+        "Ties at a cutoff are all included rather than arbitrarily broken (no "
+        "tie-break rule confirmed yet, docs/OPEN_QUESTIONS.md)."
+    )
+
+    lines += ["", "## Top 15 by value above replacement", "", "| Player | Role | Team | Round | Sim mean | Replacement | VAR mean | VAR range (P10-P90) | Data quality |", "|---|---|---|---|---:|---:|---:|---|---|"]
     for row in result.head(15).itertuples(index=False):
         lines.append(
-            f"| {row.display_name} | {row.role} | {row.team_name} | {row.sim_mean:.2f} | "
+            f"| {row.display_name} | {row.role} | {row.team_name} | {row.round_pool} | {row.sim_mean:.2f} | "
             f"{row.replacement_level:.2f} | {row.var_mean:.2f} | [{row.var_p10:.2f}, {row.var_p90:.2f}] | {row.data_quality_tier} |"
         )
 
