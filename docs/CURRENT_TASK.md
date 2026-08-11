@@ -2,7 +2,7 @@
 
 Compilare prima di ogni modifica significativa e mantenere lo scope a una singola unità verificabile.
 
-- Obiettivo: `TODO` — primo blocco M3 (valore sopra replacement) completato, vedi Progresso.
+- Obiettivo: `TODO` — flag di affidabilità dati completato (ADR-2026-020), vedi Progresso.
 - Perché ora: `TODO`
 - In scope: `TODO`
 - Fuori scope: `TODO`
@@ -17,7 +17,7 @@ Compilare prima di ogni modifica significativa e mantenere lo scope a una singol
 
 ## Progresso
 
-- Stato: **primo blocco M3 completato** (ADR-2026-019).
-- Ultimo commit/stato verificato: sessione 2026-08-11, `pytest -q` → 178 passed.
-- Sintesi: `src/fantacalcio/auction/replacement.py`, replacement level per ruolo da config (mai hardcoded), VAR con range di incertezza. Applicato al roster 2026/27 reale: trovata una carenza reale di attaccanti disponibili (88/100 slot, -12) e portieri (59/60, -1), segnalata esplicitamente invece di assorbita silenziosamente nel fallback. Risultati plausibili (Lautaro Martinez, Thuram in testa per VAR).
-- Prossima azione naturale: collegare il VAR ai 4 giri d'asta reali (pool G1-G4 da `config/auction_rules.v1.yaml`) per un vero "quanto offrire" per round; oppure fit con la rosa dell'utente (giocatori bloccati, moduli). Entrambi richiedono il ledger d'asta vivo (M0) collegato al valore (M2/M3) — il pezzo di integrazione finale.
+- Stato: **flag di affidabilità dati completato** (ADR-2026-020).
+- Ultimo commit/stato verificato: sessione 2026-08-11, `pytest -q` → 184 passed.
+- Sintesi: `src/fantacalcio/modeling/data_quality.py` distingue 4 livelli invece di un unico bucket "sconosciuto". Bug reale trovato e corretto durante l'implementazione (confronto contro 5 stagioni invece che solo l'ultima, dato che la Serie A ruota per promozione/retrocessione). Risultato finale sensato: 50 giocatori "vero trasferimento sconosciuto" (es. Stones, Mastantuono) vs 34 "squadra neopromossa" (Frosinone/Venezia). Ricerca su statistiche estere: StatsBomb copre anche Premier League/Bundesliga/La Liga/Ligue 1 gratis, ma integrarlo è un blocco a sé (dimensione paragonabile a un intero M1) — documentato in `docs/SOURCE_REGISTER.md`, non implementato.
+- Prossima azione possibile: blocco StatsBomb multi-lega (se prioritario); oppure continuare M3 (collegare VAR ai 4 giri d'asta / ledger vivo, fit con rosa utente).

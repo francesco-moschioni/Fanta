@@ -66,3 +66,13 @@ Due nuovi export manuali dall'admin: `Quotazioni_Fantacalcio_Stagione_2025_26.xl
 - **Repository GitHub non ufficiali** (scraper FBref: `soccerdata`, `fbref_football_player_data_scraper`, `footballwebscraper`, ecc.): tutti fanno scraping di FBref/Sofascore/WhoScored, stesso problema ToS già discusso per Fantacalcio.it — **non integrati**, stesso standard applicato coerentemente.
 - **Dataset Kaggle** (`serie-a-matches-dataset-2020-2025`, `serie-a-2324-team-and-player-insights`, ecc.): dati storici derivati, utili come eventuale ulteriore benchmark R&D ma non per lineup della stagione corrente; licenza da verificare caso per caso prima di un uso reale.
 - **`ml-fantacalcio-2024-2025` (GitHub, Lollitor)**: repository con dataset player-level 2024/25 inclusi minuti giocati — verosimilmente costruito anch'esso scrapando Fantacalcio.it/fonti simili; stesso rischio di provenienza, da non riusare direttamente senza verificarne la fonte originale.
+
+## StatsBomb Open Data — copertura multi-lega (scoperta 2026-08-11, non ancora integrata)
+
+Oltre a Serie A 2015/16 (già usato in M1/M2), StatsBomb Open Data copre anche competizioni estere gratis, senza account: **Premier League** (2015/16, 2003/04 — vecchie), **1. Bundesliga** (2023/24 — la più recente e utile, 2015/16), **La Liga** (fino al 2020/21), **Ligue 1** (fino al 2022/23). Nessuna è aggiornata alla stagione corrente. Utile potenzialmente per profilare giocatori trasferiti in Serie A dall'estero senza storico nel nostro dataset (vedi ADR-2026-020, categoria `no_history_transfer`), ma:
+
+- Costruire l'ingestion multi-lega richiede lo stesso lavoro di audit/parsing fatto per Serie A in M1, ripetuto per ciascuna lega.
+- Serve risoluzione identità **cross-campionato** (stesso giocatore, nomi/grafie diverse tra fonti) — più complesso del cross-source single-league già fatto.
+- Copertura temporale disallineata (Bundesliga 2023/24, Premier League 2015/16) limita l'utilità per profilare trasferimenti recenti.
+
+Non integrato in questa sessione per dimensione del lavoro (paragonabile a un intero M1 aggiuntivo). Candidato per un blocco dedicato futuro se si vuole migliorare la stima per i ~50 giocatori `no_history_transfer` del roster 2026/27.
