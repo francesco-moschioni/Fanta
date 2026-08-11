@@ -29,7 +29,22 @@ REQUIRED_COLUMNS = [
     "FTAG",
     "FTR",
 ]
-_OPTIONAL_COLUMNS = ["Time", "HTHG", "HTAG", "HTR", "HS", "AS", "HST", "AST"]
+_OPTIONAL_COLUMNS = [
+    "Time",
+    "HTHG",
+    "HTAG",
+    "HTR",
+    "HS",
+    "AS",
+    "HST",
+    "AST",
+    # Pre-match market-average odds (mean across bookmakers, not a single
+    # bookmaker's line) -- recovered for docs/CURRENT_TASK.md block 3, an
+    # independent cross-check/input for team strength alongside Dixon-Coles.
+    "AvgH",
+    "AvgD",
+    "AvgA",
+]
 
 
 @dataclass(frozen=True)

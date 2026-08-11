@@ -79,7 +79,12 @@ def write_snapshot(
     content_path.write_bytes(content)
 
     sha256 = hashlib.sha256(content).hexdigest()
-    manifest_path = snapshot_dir / "manifest.json"
+    # Scoped to `filename`, not a fixed "manifest.json": two snapshots for the same
+    # source landing in the same per-second timestamped directory (e.g. a fast
+    # audit loop fetching several seasons back-to-back) would otherwise share one
+    # manifest file, and the second write would silently overwrite the first
+    # file's provenance record while its checksummed content stayed on disk.
+    manifest_path = snapshot_dir / f"{filename}.manifest.json"
     manifest = {
         "source_id": source_id,
         "url": url,

@@ -16,7 +16,8 @@ Compilare prima di ogni modifica significativa e mantenere lo scope a una singol
 
 ## Progresso
 
-- Stato: blocco 1 (ADR-2026-023) e blocco 2 (ADR-2026-024) completati; blocco 3 (quote scommesse) prossimo.
+- Stato: blocchi 1-3 completati (ADR-2026-023/024/025); blocco 4 (decadimento temporale voto/partecipazione) prossimo.
 - Blocco 1: `src/fantacalcio/scoring/team_strength_adjustment.py`, k=0,5 validato via walk-forward, correlazione Fm 0,3472→0,3522. Integrato in `scripts/run_monte_carlo_fantavoto.py` parte B.
-- Blocco 2: `src/fantacalcio/scoring/fvm_prior.py`, pool per quartile FVM sostituisce il pool di ruolo piatto per giocatori con <10 partite storiche. Validato sul sotto-insieme mirato (`scripts/run_fvm_prior_validation.py`): correlazione Fm 0,3326→0,4048 (177 giocatori a basso storico). Integrato in parte B, 130/498 giocatori del roster 2026/27 interessati. 216 test totali passano.
-- Prossima azione: blocco 3 — recuperare le colonne quote scommesse da football-data.co.uk (attualmente scartate da `_OPTIONAL_COLUMNS` in `src/fantacalcio/ingest/football_data_co_uk.py`) come verifica/input indipendente per la forza-squadra, validato onestamente prima di adottare.
+- Blocco 2: `src/fantacalcio/scoring/fvm_prior.py`, pool per quartile FVM sostituisce il pool di ruolo piatto per giocatori con <10 partite storiche. Validato sul sotto-insieme mirato: correlazione Fm 0,3326→0,4048 (177 giocatori a basso storico). Integrato in parte B, 130/498 giocatori interessati.
+- Blocco 3: quote scommesse (`AvgH`/`AvgD`/`AvgA`) recuperate in `src/fantacalcio/ingest/football_data_co_uk.py` + `src/fantacalcio/modeling/market_odds.py`. Usate come cross-check a parità di stagione contro Dixon-Coles (correlazione media 0,9278/5 stagioni), **non** collegate alla pipeline 2026/27 (le quote per la prossima stagione non esistono ancora). Bug di provenance corretto in `src/fantacalcio/ingest/snapshot.py` (manifest condiviso tra snapshot nello stesso secondo). 222 test totali passano.
+- Prossima azione: blocco 4 — decadimento temporale (pesatura per recency) nel bootstrap voto/partecipazione (`src/fantacalcio/modeling/player_voto.py`, `src/fantacalcio/modeling/participation.py`), per coerenza con il decadimento esponenziale già usato in Dixon-Coles (`xi`). Validato via walk-forward prima di adottare.
