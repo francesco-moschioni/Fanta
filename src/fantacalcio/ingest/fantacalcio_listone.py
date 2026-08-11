@@ -13,10 +13,23 @@ touching display names.
 from __future__ import annotations
 
 import hashlib
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
 import pandas as pd
+
+_FILENAME_RE = re.compile(r"Stagione_(\d{4})_(\d{2})\.xlsx$", re.IGNORECASE)
+
+
+def _season_label_from_filename(path: Path) -> str:
+    m = _FILENAME_RE.search(path.name)
+    if not m:
+        raise ListoneParseError(
+            f"Filename {path.name!r} does not match the expected "
+            "'..._Stagione_YYYY_YY.xlsx' pattern; cannot infer season."
+        )
+    return f"{m.group(1)}_{m.group(2)}"
 
 QUOTAZIONI_SOURCE_ID = "fantacalcio_quotazioni_manual"
 STATISTICHE_SOURCE_ID = "fantacalcio_statistiche_manual"
@@ -70,13 +83,18 @@ class StagedListone:
     file_path: str
     file_sha256: str
     source_id: str
+    season_label: str
     frame: "pd.DataFrame"
 
 
-def _parse(path: str | Path, column_map: dict[str, str], source_id: str, sheet: str = "Tutti") -> StagedListone:
+def _parse(
+    path: str | Path, column_map: dict[str, str], source_id: str, season_label: str | None = None, sheet: str = "Tutti"
+) -> StagedListone:
     path = Path(path)
     if not path.is_file():
         raise ListoneParseError(f"File not found: {path}")
+
+    season_label = season_label or _season_label_from_filename(path)
 
     try:
         raw = pd.read_excel(path, sheet_name=sheet, header=1)
@@ -94,21 +112,24 @@ def _parse(path: str | Path, column_map: dict[str, str], source_id: str, sheet: 
     frame = frame[pd.to_numeric(frame["player_code"], errors="coerce").notna()]
     frame["source_id"] = source_id
     frame["source_file_hash"] = _sha256(path)
+    frame["season_label"] = season_label
 
-    return StagedListone(file_path=str(path), file_sha256=_sha256(path), source_id=source_id, frame=frame)
+    return StagedListone(
+        file_path=str(path), file_sha256=_sha256(path), source_id=source_id, season_label=season_label, frame=frame
+    )
 
 
-def parse_quotazioni_file(path: str | Path) -> StagedListone:
-    return _parse(path, _QUOTAZIONI_COLUMNS, QUOTAZIONI_SOURCE_ID)
+def parse_quotazioni_file(path: str | Path, season_label: str | None = None) -> StagedListone:
+    return _parse(path, _QUOTAZIONI_COLUMNS, QUOTAZIONI_SOURCE_ID, season_label=season_label)
 
 
-def parse_statistiche_file(path: str | Path) -> StagedListone:
-    return _parse(path, _STATISTICHE_COLUMNS, STATISTICHE_SOURCE_ID)
+def parse_statistiche_file(path: str | Path, season_label: str | None = None) -> StagedListone:
+    return _parse(path, _STATISTICHE_COLUMNS, STATISTICHE_SOURCE_ID, season_label=season_label)
 
 
 def write_staged_csv(staged: StagedListone, staged_root: Path = Path("data/staged")) -> Path:
     out_dir = staged_root / staged.source_id
     out_dir.mkdir(parents=True, exist_ok=True)
-    out_path = out_dir / "latest.csv"
+    out_path = out_dir / f"{staged.season_label}.csv"
     staged.frame.to_csv(out_path, index=False)
     return out_path

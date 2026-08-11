@@ -55,6 +55,8 @@ Due nuovi export manuali dall'admin: `Quotazioni_Fantacalcio_Stagione_2025_26.xl
 
 **Correzione a una precedente affermazione**: il campo `Pv` copre l'universo squadra completo (532-663 giocatori, molto più ampio dei ~330 votati in una singola giornata) e dà quindi un vero segnale di partecipazione **aggregato stagionale** (quante giornate su quelle disputate il giocatore ha ricevuto un voto). Non è granulare giornata-per-giornata (serve comunque una fonte lineup per quello) ma il modello di partecipazione non è più "completamente bloccato" come dichiarato in ADR-2026-012 — è parzialmente sbloccato a livello di tasso stagionale.
 
+**Aggiornamento 2026-08-11**: ricevute (import manuale) le coppie quotazioni/statistiche per **tutte** le stagioni 2021/22-2025/26 (colmando lo storico) più **2026/27** (il listone della prossima asta, 498 giocatori — non ancora giocata, nessun dato voti corrispondente). 12 file, 12/12 parsati senza errori (`scripts/ingest_listone_folder.py`). Cross-check di `Pv` contro il conteggio derivato dai voti ripetuto su tutte le 5 stagioni storiche: correlazione 0.977-0.984, MAE 1.8-2.0 giornate — validazione forte e consistente, non un caso isolato (vedi ADR-2026-014 e `data/staged/fantacalcio_voti_manual/_m2_participation_report.md`, locale).
+
 ## Altri provider valutati (ricerca allargata 2026-08-10)
 
 - **FantaMaster, Fantacalcio-Online**: aggregatori che dichiarano di combinare fino a 4 fonti voti — stesso profilo di rischio ToS di Fantacalcio.it, non fonti indipendenti pulite.

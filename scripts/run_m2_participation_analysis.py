@@ -24,7 +24,8 @@ from fantacalcio.modeling.participation import (
 from fantacalcio.modeling.player_voto import load_player_matchday_panel
 
 REPORT_PATH = Path("data/staged/fantacalcio_voti_manual/_m2_participation_report.md")
-STATISTICHE_PATH = Path("data/staged/fantacalcio_statistiche_manual/latest.csv")
+STATISTICHE_DIR = Path("data/staged/fantacalcio_statistiche_manual")
+VOTI_SEASONS = ["2021_22", "2022_23", "2023_24", "2024_25", "2025_26"]  # seasons with voti coverage
 
 
 def main() -> None:
@@ -54,24 +55,32 @@ def main() -> None:
         "",
     ]
 
-    if STATISTICHE_PATH.is_file():
-        statistiche = pd.read_csv(STATISTICHE_PATH)
-        check = cross_check_against_statistiche(participation, statistiche, season_label="2025_26")
-        print(f"Cross-check vs statistiche Pv: n={check.n_matched}, corr={check.correlation:.3f}, MAE={check.mae:.3f}")
+    lines += [
+        "## Cross-check against independently sourced `Pv` (statistiche export), per season",
+        "",
+        "| Season | Matched players | Correlation | MAE (matchdays) |",
+        "|---|---:|---:|---:|",
+    ]
+    any_checked = False
+    for season in VOTI_SEASONS:
+        statistiche_path = STATISTICHE_DIR / f"{season}.csv"
+        if not statistiche_path.is_file():
+            lines.append(f"| {season} | (statistiche file not found) | | |")
+            continue
+        any_checked = True
+        statistiche = pd.read_csv(statistiche_path)
+        check = cross_check_against_statistiche(participation, statistiche, season_label=season)
+        print(f"Cross-check {season}: n={check.n_matched}, corr={check.correlation:.3f}, MAE={check.mae:.3f}")
+        lines.append(f"| {season} | {check.n_matched} | {check.correlation:.4f} | {check.mae:.4f} |")
+
+    if any_checked:
         lines += [
-            "## Cross-check against independently sourced `Pv` (statistiche export)",
-            "",
-            f"- Matched players: {check.n_matched}",
-            f"- Correlation (our voti-derived matchdays-rated vs. their Pv): {check.correlation:.4f}",
-            f"- MAE: {check.mae:.4f} matchdays",
             "",
             "A high correlation and low MAE here means our two independently ingested "
             "sources (voti export, statistiche export) agree on how often each player "
-            "played — a real cross-source consistency check, not just an internal one.",
+            "played — a real cross-source consistency check across all 5 seasons, not "
+            "just one.",
         ]
-    else:
-        lines.append("statistiche file not found — cross-check skipped.")
-        print("statistiche file not found, skipping cross-check.")
 
     REPORT_PATH.parent.mkdir(parents=True, exist_ok=True)
     REPORT_PATH.write_text("\n".join(lines), encoding="utf-8")
