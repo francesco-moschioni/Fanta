@@ -15,8 +15,10 @@ from pathlib import Path
 
 import streamlit as st
 
+from fantacalcio.auction.bid_recommendation import budget_remaining_for_round
 from fantacalcio.auction.lock_feasibility import check_lock_feasibility
-from fantacalcio.config import load_ruleset
+from fantacalcio.auction.roster_optimizer import Candidate, optimize_roster_completion
+from fantacalcio.config import ConfigError, load_ruleset
 from fantacalcio.domain import Role
 from fantacalcio.persistence.ledger_store import connect as connect_ledger, load_current_league_state
 from fantacalcio.persistence.locks_store import add_lock, connect as connect_locks, list_locks, remove_lock
@@ -181,3 +183,91 @@ if lock_submitted:
                 add_lock(locks_conn, my_team_id, int(player["player_code"]), player["role"], note)
                 st.success(f"Bloccato: {player['display_name']}")
                 st.rerun()
+
+st.divider()
+st.subheader("Rosa ideale (completamento ottimale degli slot residui)")
+st.caption(
+    "Suggerimento che massimizza il VAR totale entro il budget e i limiti di ruolo "
+    "residui del round scelto (ricerca esatta su un pool di candidati, non una "
+    "formula d'offerta). Non è una previsione di chi vincerà — i round sono sealed "
+    "bid — solo un punto di partenza per la propria lista. I lock già bloccati "
+    "sono trattati come già impegnati (slot e budget)."
+)
+
+# G1's individual pool is defenders only (goalkeepers are a block purchase, out
+# of scope here); G3/G4 share one pool but domain.replay() still requires
+# goalkeepers in blocks of 3 even there, so P is excluded from every round.
+ROUND_TO_ROUND_POOL = {"G1": "G1", "G2": "G2", "G3": "G3_G4", "G4": "G3_G4"}
+ROUND_ROLES = {"G1": ["D"], "G2": ["C", "A"], "G3": ["D", "C", "A"], "G4": ["D", "C", "A"]}
+
+optimize_round = st.selectbox("Round da ottimizzare", [r.id for r in ruleset.rounds], key="optimize_round")
+
+if st.button("Calcola rosa ideale"):
+    round_pool_label = ROUND_TO_ROUND_POOL[optimize_round]
+    eligible_roles = ROUND_ROLES[optimize_round]
+
+    locked_role_counts: dict[str, int] = {}
+    locked_role_cost: dict[str, int] = {}
+    locked_player_codes = set()
+    for lock in my_locks:
+        locked_player_codes.add(lock.player_code)
+        locked_role_counts[lock.role] = locked_role_counts.get(lock.role, 0) + 1
+        row = get_player(player_conn, lock.player_code)
+        if row is not None:
+            locked_role_cost[lock.role] = locked_role_cost.get(lock.role, 0) + int(row["quotazione_asta"])
+
+    role_slots_needed = {}
+    for role_code in eligible_roles:
+        target = getattr(ruleset.roster, ROLE_TARGET_FIELD[role_code])
+        real_count = team.role_count(DOMAIN_ROLE[role_code])
+        role_slots_needed[role_code] = max(0, target - real_count - locked_role_counts.get(role_code, 0))
+
+    try:
+        round_budget = budget_remaining_for_round(team, optimize_round, ruleset)
+    except ConfigError as exc:
+        st.info(
+            f"Budget non calcolabile per {optimize_round}: `{my_team_id}` non ha ancora eventi "
+            f"nel round precedente necessario ({exc})."
+        )
+    else:
+        locked_cost_this_round = sum(locked_role_cost.get(r, 0) for r in eligible_roles)
+        available_budget = max(0, round_budget - locked_cost_this_round)
+
+        pool_df = search_players(player_conn, round_pool=round_pool_label)
+        pool_df = pool_df[pool_df["role"].isin(eligible_roles)]
+        pool_df = pool_df[~pool_df["player_code"].astype(str).isin(state.assigned_players)]
+        pool_df = pool_df[~pool_df["player_code"].isin(locked_player_codes)]
+
+        candidates = [
+            Candidate(player_code=int(r.player_code), role=r.role, var_mean=float(r.var_mean), cost=int(r.quotazione_asta))
+            for r in pool_df.itertuples(index=False)
+        ]
+
+        if not any(need > 0 for need in role_slots_needed.values()):
+            st.caption(f"Nessuno slot residuo per {optimize_round} (rosa reale + lock già coprono i ruoli di questo round).")
+        else:
+            result = optimize_roster_completion(candidates, role_slots_needed, available_budget)
+            st.markdown(
+                f"Budget considerato: **{round_budget}** residuo{f' − {locked_cost_this_round} già impegnato dai lock' if locked_cost_this_round else ''} "
+                f"= **{available_budget}** disponibile. Slot cercati: "
+                f"{', '.join(f'{v} {k}' for k, v in role_slots_needed.items() if v > 0)}."
+            )
+            if result.candidate_pool_capped:
+                st.caption(
+                    f"Pool di candidati limitato ai migliori {result.candidates_considered} per VAR per ruolo, "
+                    "per trattabilità — non è una ricerca su tutti i giocatori disponibili."
+                )
+            if not result.selected:
+                st.caption("Nessuna combinazione trovata entro il budget disponibile.")
+            else:
+                opt_rows = [
+                    {
+                        "Giocatore": _player_label(c.player_code),
+                        "Ruolo": c.role,
+                        "VAR": round(c.var_mean, 2),
+                        "Quotazione": c.cost,
+                    }
+                    for c in result.selected
+                ]
+                st.dataframe(opt_rows, use_container_width=True, hide_index=True)
+                st.caption(f"VAR totale: **{result.total_var:.2f}** — costo totale (quotazioni): **{result.total_cost}**")
