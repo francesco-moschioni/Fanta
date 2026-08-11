@@ -149,3 +149,13 @@ La decisione approvata più recente e applicabile prevale. Appendere; non riscri
 - Rationale: recap completo fornito direttamente dall'admin (`docs/archive/Recap_regole_asta_admin_20260811.txt`), fonte primaria autorevole. La correzione G3/G4 emerge da lettura diretta del testo: non descrive mai un'asta dal vivo, solo "offerta più alta" in busta chiusa.
 - Conseguenze: `config/auction_rules.v1.yaml` aggiornato (mode `sealed_bid_list`/`sealed_bid_free` invece di `sealed_bid`/`open_auction`; nuova sezione `post_auction_completion`); `src/fantacalcio/config.py` aggiornato di conseguenza; `docs/AUCTION_RULES.md` e `docs/OPEN_QUESTIONS.md` aggiornati. Restano aperti: tie-breaker per pari preferenza+pari offerta, soglie esatte delle liste (arrivano venerdì sera), formato file admin da importare. `resolve_sealed_bid_round()` in `src/fantacalcio/domain.py` resta bloccata (`NotImplementedError`) — le meccaniche sono ora note ma l'implementazione è lavoro futuro (M3), non fatto in questa ADR. 117 test passano.
 - Approvato da: project owner
+
+### ADR-2026-014 — Tasso di partecipazione stagionale come feature, derivato dai voti
+
+- Data: 2026-08-11
+- Stato: approved
+- Scope: modeling
+- Decisione: calcolare il tasso di partecipazione (giornate votate / 38) per giocatore-stagione direttamente dal pannello voti (tutte e 5 le stagioni), invece di dipendere solo dal campo `Pv` del file statistiche (che copre una sola stagione). Il file statistiche resta utile come **cross-check indipendente**, non come unica fonte.
+- Rationale: la stagione 2025/26 nei voti è già completa (38/38, noto da M1), quindi non è un problema di walk-forward infra-stagionale ma di persistenza stagione-su-stagione — utile proprio per preparare l'asta 2026/27 che non è ancora iniziata. Risultati su dati reali (2955 coppie giocatore-stagione, 1432 transizioni stagione-su-stagione consecutive): il tasso dell'anno precedente predice quello dell'anno successivo meglio della media globale (MAE 0.2173 vs 0.2560, correlazione 0.428) — segnale più solido del guadagno marginale trovato per il voto base (ADR-2026-012). Cross-check contro `Pv`: correlazione 0.979, MAE 2 giornate su 38 — le due fonti indipendenti (voti, statistiche) sono coerenti tra loro.
+- Conseguenze: `src/fantacalcio/modeling/participation.py` disponibile e testato (124 test totali nel progetto); report in `data/staged/fantacalcio_voti_manual/_m2_participation_report.md` (locale, non committato). Non ancora integrato come feature diretta nello stimatore voto di `player_voto.py` — prossimo passo naturale se si vuole un output combinato voto-atteso × probabilità-di-schierarsi.
+- Approvato da: project owner
