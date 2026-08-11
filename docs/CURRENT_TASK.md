@@ -16,6 +16,7 @@ Compilare prima di ogni modifica significativa e mantenere lo scope a una singol
 
 ## Progresso
 
-- Stato: blocco 1 completato (ADR-2026-023); blocco 2 (FVM come prior secondario) in corso.
-- Blocco 1: `src/fantacalcio/scoring/team_strength_adjustment.py` implementato, 8 test dedicati + 209 test totali passano. k=0,5 validato via walk-forward (`scripts/run_team_strength_adjustment_validation.py`): correlazione con Fm reale 0,3472→0,3522. Integrato in `scripts/run_monte_carlo_fantavoto.py` parte B (applicazione roster 2026/27).
-- Prossima azione: blocco 2 — usare `fvm_classic`/`fvm_mantra` (già in `data/staged/fantacalcio_quotazioni_manual/*.csv`) come prior secondario per giocatori `no_history_transfer`/`no_history_new_team` (ADR-2026-020) invece della sola media di ruolo, validato onestamente prima di adottare.
+- Stato: blocco 1 (ADR-2026-023) e blocco 2 (ADR-2026-024) completati; blocco 3 (quote scommesse) prossimo.
+- Blocco 1: `src/fantacalcio/scoring/team_strength_adjustment.py`, k=0,5 validato via walk-forward, correlazione Fm 0,3472→0,3522. Integrato in `scripts/run_monte_carlo_fantavoto.py` parte B.
+- Blocco 2: `src/fantacalcio/scoring/fvm_prior.py`, pool per quartile FVM sostituisce il pool di ruolo piatto per giocatori con <10 partite storiche. Validato sul sotto-insieme mirato (`scripts/run_fvm_prior_validation.py`): correlazione Fm 0,3326→0,4048 (177 giocatori a basso storico). Integrato in parte B, 130/498 giocatori del roster 2026/27 interessati. 216 test totali passano.
+- Prossima azione: blocco 3 — recuperare le colonne quote scommesse da football-data.co.uk (attualmente scartate da `_OPTIONAL_COLUMNS` in `src/fantacalcio/ingest/football_data_co_uk.py`) come verifica/input indipendente per la forza-squadra, validato onestamente prima di adottare.
