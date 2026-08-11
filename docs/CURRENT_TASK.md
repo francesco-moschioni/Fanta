@@ -2,22 +2,26 @@
 
 Compilare prima di ogni modifica significativa e mantenere lo scope a una singola unità verificabile.
 
-- Obiettivo: `TODO` — join risultati partita per porta-inviolata completato (ADR-2026-017), vedi Progresso.
-- Perché ora: `TODO`
-- In scope: `TODO`
-- Fuori scope: `TODO`
-- Documenti canonici da leggere: `TODO`
-- File/simboli probabilmente coinvolti: `TODO`
-- Criteri di accettazione: `TODO`
-- Comandi test/quality: `TODO`
-- Data cutoff/snapshot/`as_of`: `TODO o N/A`
-- Seed, se applicabile: `TODO`
-- Delegazione: vietata | Gemini per `TODO` | subagente `TODO` per `TODO`
-- Decisioni aperte/blocchi: `TODO`
+- Obiettivo: distribuzione Monte Carlo del fantavoto per giocatore (non solo stima puntuale), via bootstrap dai dati storici reali + motore di scoring deterministico già validato.
+- Perché ora: `CLAUDE.md` vieta output puntuali per le previsioni ("distributions, not single magic numbers"); finora M2 produce solo medie. Il motore di scoring (ADR-2026-016/017) e i dati storici (5 stagioni, join squadra-giornata) sono pronti per essere ricampionati invece di modellati parametricamente — evita di inventare una forma di distribuzione non confermata dai dati.
+- In scope:
+  - Pool di righe storiche reali (voto + eventi individuali, incluso `team_goals_conceded` dove disponibile) per giocatore e per ruolo.
+  - Simulazione a mistura: per ogni sorteggio, con probabilità `n/(n+prior_games)` (stesso schema di shrinkage già validato in ADR-2026-012) pesca dalla storia del giocatore, altrimenti dal pool di ruolo — preserva le correlazioni reali tra voto ed eventi (niente Poisson indipendenti che romperebbero quella correlazione).
+  - Seed esplicito, riproducibile.
+  - Output: media, mediana, P10-P90 per giocatore.
+  - Validazione: la media simulata deve essere coerente con la fantamedia storica reale (stesso controllo di onestà usato finora).
+  - Applicazione al roster 2026/27 per sostituire/arricchire le valutazioni puntuali di ADR-2026-015.
+- Fuori scope: modificatore difesa e altri componenti di squadra ancora bloccati (restano bloccati anche nella simulazione).
+- Documenti canonici: `docs/DATA_AND_MODELING.md` (Monte Carlo, distribuzioni), ADR-2026-012/016/017.
+- File probabilmente coinvolti: `src/fantacalcio/scoring/monte_carlo.py`, test, script.
+- Criteri di accettazione: seed fissato e riproducibile; media simulata validata contro dati reali; applicato al roster 2026/27 reale.
+- Comandi test/quality: `pytest -q`.
+- Seed: esplicito (42, coerente col resto del progetto).
+- Delegazione: vietata.
+- Decisioni aperte/blocchi: nessuno per lo scope sopra.
 
 ## Progresso
 
-- Stato: **join risultati partita completato** (ADR-2026-017).
-- Ultimo commit/stato verificato: sessione 2026-08-11, `pytest -q` → 162 passed.
-- Sintesi: `src/fantacalcio/modeling/team_matchday.py` deriva gol per squadra-giornata da football-data.co.uk (giornata dedotta dal rank cronologico, verificato contro OpenFootball). Provato a estendere porta-inviolata/gol-subito ai difensori con questo dato — **peggiorava** l'accordo con `Fm` reale, scartato con evidenza empirica (non un'assunzione). Il portiere invece beneficia del join (copertura 96,6% vs dato individuale parziale): correlazione con `Fm` reale migliorata a 0,51-0,60.
-- Prossima azione possibile: modificatore difesa (formula ancora bloccata in `OPEN_QUESTIONS.md`, ma ora abbiamo il join squadra-giornata pronto per quando sarà confermata); oppure motore Monte Carlo per giornate future.
+- Stato: not started
+- Ultimo commit/stato verificato: `7953bbe`
+- Prossima azione: implementare `src/fantacalcio/scoring/monte_carlo.py`.
