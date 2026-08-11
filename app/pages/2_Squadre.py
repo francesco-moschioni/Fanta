@@ -1,10 +1,10 @@
 """Tabellone squadre + registrazione manuale dei risultati pubblicati dall'admin
-(docs/CURRENT_TASK.md, M4 slice 2).
+(docs/CURRENT_TASK.md, M4 slice 2; passata di chiarezza M4 slice 7).
 
-Importante (vedi CURRENT_TASK.md): i round G1-G4 sono sealed bid, risolti
-dall'admin -- questa pagina NON è un'asta live interattiva. Registra i risultati
-già decisi altrove. Il ledger è append-only (src/fantacalcio/domain.py): un
-errore si corregge registrando un VoidEvent, mai modificando un evento esistente.
+Importante: i turni dell'asta sono a busta chiusa, risolti dall'admin -- questa
+pagina NON è un'asta live interattiva. Registra i risultati già decisi altrove.
+Il ledger è append-only (src/fantacalcio/domain.py): un errore si corregge
+registrando un VoidEvent, mai modificando un evento esistente.
 """
 
 from __future__ import annotations
@@ -33,17 +33,31 @@ from fantacalcio.persistence.ledger_store import (
     load_current_league_state,
     load_events,
 )
-from fantacalcio.persistence.player_table import DEFAULT_DB_PATH, connect as connect_players, search_players
+from fantacalcio.persistence.player_table import DEFAULT_DB_PATH, connect as connect_players, get_player, search_players
+from fantacalcio.persistence.team_labels_store import connect as connect_labels, display_name, get_all_labels
 
 st.set_page_config(page_title="Fantacalcio — Squadre", layout="wide")
 st.title("Squadre")
+st.markdown(
+    "Quando l'admin pubblica i risultati di un turno (chi ha vinto quale "
+    "giocatore, a che prezzo), registrali qui: uno per volta, oppure il "
+    "blocco portieri tutto insieme. Il tabellone sotto si aggiorna da solo, "
+    "per tutte le squadre, in base a quello che registri."
+)
 
 RULESET_PATH = Path("config/auction_rules.v1.yaml")
 
-st.warning(
-    "I round G1-G4 sono **sealed bid**, risolti dall'admin dopo la chiusura di ogni "
-    "turno — questa pagina non è un'asta live interattiva. Registra qui i risultati "
-    "**già decisi** (pubblicati dall'admin), per tenere aggiornati budget e rose."
+ROUND_LABELS = {
+    "G1": "1° turno — portieri + difensori",
+    "G2": "2° turno — centrocampisti + attaccanti",
+    "G3": "3° turno — chiunque sia rimasto",
+    "G4": "4° turno — chiunque sia rimasto",
+}
+
+st.info(
+    "I turni sono a **busta chiusa**: l'admin li chiude e pubblica i risultati, "
+    "non si offre in tempo reale dentro questa pagina. Registra qui solo "
+    "risultati **già decisi e pubblicati**."
 )
 
 if not DEFAULT_DB_PATH.is_file():
@@ -66,12 +80,24 @@ def _player_conn():
     return connect_players()
 
 
+@st.cache_resource
+def _labels_conn():
+    return connect_labels()
+
+
 ruleset = _ruleset()
 ledger_conn = _ledger_conn()
 player_conn = _player_conn()
+labels_conn = _labels_conn()
+team_labels = get_all_labels(labels_conn)
 
 TEAM_IDS = [f"team_{i:02d}" for i in range(1, ruleset.teams + 1)]
 ROUND_IDS = [r.id for r in ruleset.rounds]
+
+
+def _team_label(team_id: str) -> str:
+    return display_name(team_id, team_labels)
+
 
 if "my_team_id" not in st.session_state:
     st.session_state["my_team_id"] = TEAM_IDS[0]
@@ -80,7 +106,8 @@ st.selectbox(
     "La mia squadra",
     TEAM_IDS,
     key="my_team_id",
-    help="Nessun nome reale di squadra/manager è ancora in repo — identificativi generici finché non arrivano.",
+    format_func=_team_label,
+    help="Puoi darle un nome nella pagina Home invece di usare l'identificativo grezzo.",
 )
 
 all_events = load_events(ledger_conn)
@@ -92,6 +119,7 @@ teams_with_logo_bonus = {
 }
 
 st.subheader("Tabellone")
+st.caption("Una riga per squadra: turno più avanzato registrato, budget residuo, quanti slot di rosa sono già coperti per ruolo.")
 rows = []
 role_targets = {
     Role.GK: ruleset.roster.goalkeeper_block_size,
@@ -109,31 +137,31 @@ for team_id in TEAM_IDS:
     budget = team.budgets.get(latest_round) if latest_round else None
     rows.append(
         {
-            "Squadra": team_id + (" (tu)" if team_id == st.session_state["my_team_id"] else ""),
-            "Round corrente": latest_round or "—",
-            "Budget residuo": budget.remaining if budget else "—",
-            "P": f"{team.role_count(Role.GK)}/{role_targets[Role.GK]}",
-            "D": f"{team.role_count(Role.DEF)}/{role_targets[Role.DEF]}",
-            "C": f"{team.role_count(Role.MID)}/{role_targets[Role.MID]}",
-            "A": f"{team.role_count(Role.FWD)}/{role_targets[Role.FWD]}",
+            "Squadra": _team_label(team_id) + (" (tu)" if team_id == st.session_state["my_team_id"] else ""),
+            "Turno più avanzato": ROUND_LABELS.get(latest_round, "—") if latest_round else "Ancora nessun risultato",
+            "Budget residuo": str(budget.remaining) if budget else "—",
+            "Portieri": f"{team.role_count(Role.GK)}/{role_targets[Role.GK]}",
+            "Difensori": f"{team.role_count(Role.DEF)}/{role_targets[Role.DEF]}",
+            "Centrocampisti": f"{team.role_count(Role.MID)}/{role_targets[Role.MID]}",
+            "Attaccanti": f"{team.role_count(Role.FWD)}/{role_targets[Role.FWD]}",
             "Bonus logo": "Sì" if team_id in teams_with_logo_bonus else "—",
         }
     )
 st.dataframe(
     rows,
-    use_container_width=True,
+    width="stretch",
     hide_index=True,
     column_config={
-        "Round corrente": st.column_config.TextColumn(
-            help="Ultimo round in cui questa squadra ha almeno un evento registrato nel ledger."
+        "Turno più avanzato": st.column_config.TextColumn(
+            help="L'ultimo turno in cui questa squadra ha almeno un evento registrato nel ledger."
         ),
         "Budget residuo": st.column_config.TextColumn(
-            help="Budget disponibile meno speso per il round corrente, dal replay del ledger vivo (eventi annullati esclusi)."
+            help="Budget disponibile meno speso per il turno più avanzato, dal replay del ledger vivo (eventi annullati esclusi)."
         ),
-        "P": st.column_config.TextColumn(help="Portieri acquistati / slot totali (blocco portieri, config/auction_rules.v1.yaml)."),
-        "D": st.column_config.TextColumn(help="Difensori acquistati / slot totali di ruolo."),
-        "C": st.column_config.TextColumn(help="Centrocampisti acquistati / slot totali di ruolo."),
-        "A": st.column_config.TextColumn(help="Attaccanti acquistati / slot totali di ruolo."),
+        "Portieri": st.column_config.TextColumn(help="Portieri acquistati / slot totali (blocco portieri, config/auction_rules.v1.yaml)."),
+        "Difensori": st.column_config.TextColumn(help="Difensori acquistati / slot totali di ruolo."),
+        "Centrocampisti": st.column_config.TextColumn(help="Centrocampisti acquistati / slot totali di ruolo."),
+        "Attaccanti": st.column_config.TextColumn(help="Attaccanti acquistati / slot totali di ruolo."),
         "Bonus logo": st.column_config.TextColumn(
             help=f"+{ruleset.custom_logo_bonus_credits} crediti per logo/immagine personalizzata invece dello stemma di stock (postilla admin 2026-08-11), già incluso nel budget."
         ),
@@ -142,10 +170,11 @@ st.dataframe(
 
 st.divider()
 st.subheader("Registra un risultato")
+st.caption("Un giocatore alla volta (non i portieri, che si comprano in blocco: vedi il modulo dedicato sotto).")
 
 with st.form("register_result"):
-    round_id = st.selectbox("Round", ROUND_IDS)
-    winning_team = st.selectbox("Squadra vincitrice", TEAM_IDS)
+    round_id = st.selectbox("Turno", ROUND_IDS, format_func=lambda r: ROUND_LABELS.get(r, r))
+    winning_team = st.selectbox("Squadra vincitrice", TEAM_IDS, format_func=_team_label)
     name_query = st.text_input("Cerca giocatore per nome")
     amount = st.number_input("Prezzo pagato (crediti)", min_value=0, step=1)
     submitted = st.form_submit_button("Cerca e registra")
@@ -191,20 +220,19 @@ if submitted:
                     st.error(f"Evento non valido, non registrato: {exc}")
                 else:
                     append_event(ledger_conn, candidate)
-                    st.success(f"Registrato: {winning_team} — {player['display_name']} — {amount} crediti — {round_id}")
+                    st.success(f"Registrato: {_team_label(winning_team)} — {player['display_name']} — {amount} crediti — {ROUND_LABELS.get(round_id, round_id)}")
                     st.rerun()
 
 st.divider()
 st.subheader("Registra blocco portieri")
 st.caption(
     f"I portieri si comprano come blocco di {ruleset.roster.goalkeeper_block_size}, un solo "
-    "evento e un solo prezzo per il blocco intero (sempre in G1, unico round con il pool "
-    "`goalkeeper_blocks`)."
+    "evento e un solo prezzo per il blocco intero (sempre nel 1° turno, l'unico con i portieri)."
     + (" Regola: devono essere dello stesso club (avviso, non ancora imposto automaticamente)." if ruleset.roster.goalkeeper_same_club else "")
 )
 
 with st.form("register_gk_block"):
-    gk_team = st.selectbox("Squadra vincitrice", TEAM_IDS, key="gk_team")
+    gk_team = st.selectbox("Squadra vincitrice", TEAM_IDS, key="gk_team", format_func=_team_label)
     gk_names = [
         st.text_input(f"Portiere {i + 1} (nome)", key=f"gk_name_{i}")
         for i in range(ruleset.roster.goalkeeper_block_size)
@@ -262,7 +290,7 @@ if gk_submitted:
             else:
                 append_event(ledger_conn, gk_candidate)
                 names = ", ".join(p["display_name"] for p in resolved)
-                st.success(f"Registrato blocco portieri: {gk_team} — {names} — {gk_amount} crediti")
+                st.success(f"Registrato blocco portieri: {_team_label(gk_team)} — {names} — {gk_amount} crediti")
                 st.rerun()
 
 st.divider()
@@ -270,15 +298,15 @@ st.subheader("Bonus logo personalizzato")
 st.caption(
     f"Postilla admin, 2026-08-11: +{ruleset.custom_logo_bonus_credits} crediti a ogni squadra che "
     "imposta un'immagine/logo personalizzato invece dello stemma di stock Fantacalcio "
-    "(come lo scorso anno). Applicato al budget G1: si propaga automaticamente a "
-    "G2/G3/G4 tramite la catena `remaining_G1`, nessun'altra azione necessaria."
+    "(come lo scorso anno). Applicato al 1° turno: si propaga automaticamente ai turni "
+    "successivi, nessun'altra azione necessaria."
 )
 teams_without_bonus = [t for t in TEAM_IDS if t not in teams_with_logo_bonus]
 if not teams_without_bonus:
     st.caption("Tutte le squadre hanno già ricevuto il bonus.")
 else:
     with st.form("assign_logo_bonus"):
-        bonus_team = st.selectbox("Squadra", teams_without_bonus)
+        bonus_team = st.selectbox("Squadra", teams_without_bonus, format_func=_team_label)
         bonus_submitted = st.form_submit_button(f"Assegna +{ruleset.custom_logo_bonus_credits} crediti")
     if bonus_submitted:
         bonus_event = BudgetAdjustmentEvent(
@@ -296,22 +324,33 @@ else:
             st.error(f"Evento non valido, non registrato: {exc}")
         else:
             append_event(ledger_conn, bonus_event)
-            st.success(f"Bonus assegnato a {bonus_team}: +{ruleset.custom_logo_bonus_credits} crediti.")
+            st.success(f"Bonus assegnato a {_team_label(bonus_team)}: +{ruleset.custom_logo_bonus_credits} crediti.")
             st.rerun()
 
 st.divider()
-st.subheader("Annulla un risultato (undo)")
+st.subheader("Annulla un risultato")
+st.caption(
+    "Il ledger non cancella mai nulla: annullare aggiunge un evento di annullamento "
+    "che sovrascrive l'effetto di quello scelto, restano entrambi nella storia."
+)
+
+
+def _describe(e) -> str:
+    team = _team_label(e.team_id)
+    if isinstance(e, BudgetAdjustmentEvent):
+        return f"{team} — bonus {e.reason} +{e.amount} crediti — {ROUND_LABELS.get(e.round_id, e.round_id)}"
+    names = []
+    for pid in e.item.player_ids:
+        row = get_player(player_conn, int(pid))
+        names.append(row["display_name"] if row is not None else f"#{pid}")
+    return f"{team} — {', '.join(names)} — {e.amount} crediti — {ROUND_LABELS.get(e.round_id, e.round_id)}"
+
 
 active = [e for e in active_events if isinstance(e, (AssignmentEvent, BudgetAdjustmentEvent))]
 
 if not active:
     st.caption("Nessun evento attivo da annullare.")
 else:
-    def _describe(e):
-        if isinstance(e, BudgetAdjustmentEvent):
-            return f"{e.team_id} — bonus {e.reason} +{e.amount} crediti — {e.round_id} ({e.event_id[:8]})"
-        return f"{e.team_id} — {e.item.player_ids} — {e.amount} crediti — {e.round_id} ({e.event_id[:8]})"
-
     options = {_describe(e): e.event_id for e in active}
     with st.form("void_event"):
         selected_label = st.selectbox("Evento da annullare", list(options.keys()))

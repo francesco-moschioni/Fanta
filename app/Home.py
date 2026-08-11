@@ -1,16 +1,102 @@
-"""Landing page: data freshness/provenance only (docs/UX_PRODUCT.md's "Dati/modello"
-row: quanto fidarsi). No forecasts shown here -- that's the Giocatori page."""
+"""Guida iniziale + gestione etichetta squadra (docs/CURRENT_TASK.md, M4 slice 7:
+passata di chiarezza UI su richiesta esplicita dell'utente dopo test reale)."""
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import streamlit as st
 
+from fantacalcio.config import load_ruleset
 from fantacalcio.persistence.player_table import DEFAULT_DB_PATH, connect, get_build_meta
+from fantacalcio.persistence.team_labels_store import connect as connect_labels, get_label, set_label
 
 st.set_page_config(page_title="Fantacalcio — Home", layout="wide")
 
-st.title("Fantacalcio auction assistant")
-st.caption("Strumento privato di supporto decisionale. Nessun dato viene inviato altrove.")
+RULESET_PATH = Path("config/auction_rules.v1.yaml")
+
+st.title("Assistente per l'asta del Fantacalcio")
+st.caption("Strumento privato, solo per te. Nessun dato esce da questo computer.")
+
+st.markdown(
+    """
+Questo strumento **non decide al posto tuo**. Ti mostra numeri calcolati in modo
+trasparente (ogni numero ha una spiegazione, visibile passandoci sopra il mouse
+o aprendo il pannello "come si calcola"), e ti aiuta a tenere traccia di budget,
+rosa e obiettivi mentre l'asta procede — così non devi ricordarti tutto a mente
+o su un foglio a parte.
+
+## Le tre pagine, in breve
+
+- **Giocatori** — cerca un giocatore, guarda quanto ci si aspetta che renda e
+  quanto vale rispetto agli altri del suo ruolo. Da qui puoi anche segnarlo
+  come tuo obiettivo, o come uno da evitare.
+- **Squadre** — quando l'admin pubblica i risultati di un turno (chi ha vinto
+  quale giocatore, a che prezzo), registrali qui. Tiene aggiornati in tempo
+  reale budget e rosa di tutte le squadre.
+- **Rosa** — la tua situazione: cosa hai già vinto per davvero, quali obiettivi
+  hai bloccato, e un calcolo automatico di quale combinazione di giocatori
+  conviene di più per completare quello che ti manca.
+
+## Come usarlo, in pratica
+
+1. **Prima dell'asta**: vai su *Giocatori*, guardati intorno, blocca i tuoi
+   obiettivi principali (bottone "Blocca come obiettivo" nella scheda di ogni
+   giocatore).
+2. **Durante l'asta**: appena l'admin pubblica i risultati di un turno,
+   registrali su *Squadre* — un evento per ogni giocatore assegnato (o il
+   blocco portieri, che si registra insieme).
+3. **Tra un turno e l'altro**: apri *Rosa* per vedere cosa ti manca, quanto
+   budget hai per il turno dopo, e se vuoi un suggerimento su come completarla.
+
+**Importante**: i turni dell'asta sono a **busta chiusa**, decisi dall'admin
+dopo la chiusura di ciascuno — questo strumento non è un'asta dal vivo dentro
+l'app, registra e pianifica, non fa offerte per te.
+"""
+)
+
+st.divider()
+st.subheader("La tua squadra")
+st.caption(
+    "L'asta usa identificativi generici (`team_01`, `team_02`, ...) perché non ci "
+    "sono ancora nomi reali delle squadre in questo strumento. Puoi darle un nome "
+    "tuo, solo per comodità — non cambia nulla nei calcoli, è solo un'etichetta "
+    "che compare al posto dell'identificativo grezzo in tutte le pagine."
+)
+
+
+@st.cache_resource
+def _ruleset():
+    return load_ruleset(RULESET_PATH)
+
+
+@st.cache_resource
+def _labels_conn():
+    return connect_labels()
+
+
+ruleset = _ruleset()
+labels_conn = _labels_conn()
+TEAM_IDS = [f"team_{i:02d}" for i in range(1, ruleset.teams + 1)]
+
+if "my_team_id" not in st.session_state:
+    st.session_state["my_team_id"] = TEAM_IDS[0]
+
+st.selectbox("Quale squadra sei tu", TEAM_IDS, key="my_team_id")
+current_label = get_label(labels_conn, st.session_state["my_team_id"]) or ""
+
+with st.form("rename_team"):
+    new_label = st.text_input("Nome per la tua squadra (facoltativo)", value=current_label)
+    rename_submitted = st.form_submit_button("Salva nome")
+if rename_submitted:
+    if new_label.strip():
+        set_label(labels_conn, st.session_state["my_team_id"], new_label.strip())
+        st.success(f"Fatto: {st.session_state['my_team_id']} ora appare come \"{new_label.strip()}\".")
+    else:
+        st.warning("Nome vuoto, non salvato.")
+
+st.divider()
+st.subheader("Stato dei dati")
 
 if not DEFAULT_DB_PATH.is_file():
     st.error(
@@ -21,6 +107,7 @@ if not DEFAULT_DB_PATH.is_file():
     )
     st.stop()
 
+
 @st.cache_resource
 def _get_connection():
     return connect()
@@ -29,24 +116,15 @@ def _get_connection():
 conn = _get_connection()
 meta = get_build_meta(conn)
 
-st.subheader("Stato dati")
 col1, col2, col3 = st.columns(3)
-col1.metric("Giocatori nella tabella", meta.get("n_players", "?"))
-col2.metric("Costruita il (UTC)", meta.get("built_at", "?")[:19])
-col3.metric("Fonte", "M3 replacement values")
+col1.metric("Giocatori nella tabella", meta.get("n_players", "?"), help="Quanti giocatori del listone 2026/27 hanno una previsione calcolata.")
+col2.metric("Dati aggiornati il (UTC)", meta.get("built_at", "?")[:19], help="Quando è stata ricostruita l'ultima volta la tabella dei giocatori.")
+col3.metric("Fonte", "M3 replacement values", help="Il file da cui provengono i numeri: fantavoto atteso, VAR, tier di qualità dati.")
 
-st.caption(f"Hash sorgente (sha256, primi 12 caratteri): `{meta.get('source_sha256', '?')[:12]}`")
-st.caption(f"File sorgente: `{meta.get('source_path', '?')}`")
+st.caption(f"File sorgente: `{meta.get('source_path', '?')}` (hash `{meta.get('source_sha256', '?')[:12]}`)")
 
 st.warning(
-    "Ranking dei pool (G1-G4) **provvisorio**, prodotto dal modello — non è la lista "
-    "ufficiale dell'admin (arriva via Google Form, vedi "
-    "`docs/archive/Recap_regole_asta_admin_20260811.txt`). "
-    "Vai a **Giocatori** nella barra laterale per la ricerca e la scheda dettaglio."
-)
-
-st.info(
-    "Questa build della UI è sola lettura (M4 slice 1): niente costruttore rosa, "
-    "cockpit asta live, offerta consigliata o massimo dinamico — richiedono il ledger "
-    "vivo, non ancora collegato qui. Solo ricerca e scheda giocatore per ora."
+    "Il ranking dei giocatori per turno (G1-G4) è **provvisorio**, prodotto da questo "
+    "strumento — non è ancora la lista ufficiale dell'admin (arriva via Google Form). "
+    "Fidati per farti un'idea, ma verifica sulla lista reale quando arriva."
 )

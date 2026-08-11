@@ -1,9 +1,11 @@
 """Ricerca/filtri + scheda giocatore (docs/UX_PRODUCT.md, area "Giocatori", P0).
 
-Sola lettura: legge la tabella DuckDB già costruita da
+Sola lettura sui numeri del motore: legge la tabella DuckDB già costruita da
 scripts/build_player_table.py, non ricalcola nulla (CLAUDE.md: la UI non
-duplica formule del motore). Campi non ancora disponibili in questa slice sono
-mostrati esplicitamente come tali, mai inventati.
+duplica formule del motore). Campi non ancora disponibili sono mostrati
+esplicitamente come tali, mai inventati. Passata di chiarezza (M4 slice 7):
+ogni pagina spiega in linguaggio semplice cosa fa, in cima, e non mostra mai
+un `team_id` grezzo se esiste un'etichetta personale.
 """
 
 from __future__ import annotations
@@ -17,6 +19,7 @@ from fantacalcio.auction.bid_recommendation import BidRecommendationError, recom
 from fantacalcio.auction.lock_feasibility import check_lock_feasibility
 from fantacalcio.auction.replacement import league_slots_per_role
 from fantacalcio.config import ConfigError, load_ruleset
+from fantacalcio.persistence.avoid_list_store import add_avoid, connect as connect_avoid, is_avoided, remove_avoid
 from fantacalcio.persistence.ledger_store import connect as connect_ledger, load_current_league_state
 from fantacalcio.persistence.locks_store import add_lock, connect as connect_locks, is_locked, list_locks, remove_lock
 from fantacalcio.persistence.player_table import (
@@ -26,12 +29,33 @@ from fantacalcio.persistence.player_table import (
     get_build_meta,
     search_players,
 )
+from fantacalcio.persistence.team_labels_store import connect as connect_labels, display_name, get_all_labels
 from fantacalcio.scoring.monte_carlo import DEFAULT_PRIOR_GAMES
 
 RULESET_PATH = Path("config/auction_rules.v1.yaml")
 
+ROLE_LABELS = {"P": "Portiere", "D": "Difensore", "C": "Centrocampista", "A": "Attaccante"}
+TIER_LABELS = {
+    "full_history": "Storico completo",
+    "partial_history": "Storico parziale",
+    "no_history_transfer": "Zero storico — trasferimento reale (cautela)",
+    "no_history_new_team": "Zero storico — squadra neopromossa",
+}
+ROUND_POOL_LABELS = {
+    "G1": "1° turno (portieri + difensori)",
+    "G2": "2° turno (centrocampisti + attaccanti)",
+    "G3_G4": "3°/4° turno (chiunque sia rimasto)",
+}
+
 st.set_page_config(page_title="Fantacalcio — Giocatori", layout="wide")
 st.title("Giocatori")
+st.markdown(
+    "Cerca un giocatore, guarda quanto ci si aspetta che renda e quanto vale "
+    "rispetto agli altri del suo ruolo (**VAR** = valore sopra il livello di "
+    "rimpiazzo — ogni numero ha una spiegazione se ci passi sopra il mouse o "
+    "apri il pannello \"come si calcola\"). Da qui puoi anche segnare un "
+    "giocatore come tuo **obiettivo** o come uno **da evitare**."
+)
 
 if not DEFAULT_DB_PATH.is_file():
     st.error("Tabella locale non trovata. Esegui `python scripts/build_player_table.py` prima.")
@@ -54,35 +78,44 @@ def _get_locks_conn():
 
 
 @st.cache_resource
+def _get_avoid_conn():
+    return connect_avoid()
+
+
+@st.cache_resource
 def _get_ledger_conn():
     return connect_ledger()  # auto-crea un ledger vuoto se non esiste ancora
+
+
+@st.cache_resource
+def _get_labels_conn():
+    return connect_labels()
 
 
 conn = _get_connection()
 ruleset = _get_ruleset()
 locks_conn = _get_locks_conn()
+avoid_conn = _get_avoid_conn()
 ledger_conn = _get_ledger_conn()
+labels_conn = _get_labels_conn()
 league_state = load_current_league_state(ledger_conn, ruleset)
+team_labels = get_all_labels(labels_conn)
 meta = get_build_meta(conn)
 st.caption(
-    f"Dati costruiti il {meta.get('built_at', '?')[:19]} UTC da "
-    f"`{meta.get('source_path', '?')}` — lista **provvisoria** del modello, non quella "
-    "ufficiale dell'admin."
+    f"Dati costruiti il {meta.get('built_at', '?')[:19]} UTC — lista **provvisoria** "
+    "del modello, non quella ufficiale dell'admin (vedi pagina Home per i dettagli)."
 )
-
-TIER_LABELS = {
-    "full_history": "Storico completo",
-    "partial_history": "Storico parziale",
-    "no_history_transfer": "Zero storico — trasferimento reale (cautela)",
-    "no_history_new_team": "Zero storico — squadra neopromossa",
-}
 
 with st.sidebar:
     st.header("Filtri")
     name_query = st.text_input("Cerca per nome")
-    role = st.selectbox("Ruolo", ["Tutti"] + distinct_values(conn, "role"))
-    team_name = st.selectbox("Squadra", ["Tutte"] + distinct_values(conn, "team_name"))
-    round_pool = st.selectbox("Round pool", ["Tutti"] + distinct_values(conn, "round_pool"))
+    role = st.selectbox("Ruolo", ["Tutti"] + distinct_values(conn, "role"), format_func=lambda r: ROLE_LABELS.get(r, r))
+    team_name = st.selectbox("Squadra reale", ["Tutte"] + distinct_values(conn, "team_name"))
+    round_pool = st.selectbox(
+        "Turno d'asta",
+        ["Tutti"] + distinct_values(conn, "round_pool"),
+        format_func=lambda r: ROUND_POOL_LABELS.get(r, r),
+    )
     tier = st.selectbox(
         "Qualità dati",
         ["Tutti"] + distinct_values(conn, "data_quality_tier"),
@@ -107,13 +140,16 @@ display_cols = {
     "quotazione_asta": "Quotazione",
     "sim_mean": "Fantavoto atteso",
     "var_mean": "VAR",
-    "round_pool": "Round",
+    "round_pool": "Turno",
     "data_quality_tier": "Qualità dati",
 }
 table = results[list(display_cols.keys())].rename(columns=display_cols)
+table["Ruolo"] = table["Ruolo"].map(lambda r: ROLE_LABELS.get(r, r))
+table["Turno"] = table["Turno"].map(lambda r: ROUND_POOL_LABELS.get(r, r))
+table["Qualità dati"] = table["Qualità dati"].map(lambda t: TIER_LABELS.get(t, t))
 st.dataframe(
     table,
-    use_container_width=True,
+    width="stretch",
     hide_index=True,
     column_config={
         "Fantavoto atteso": st.column_config.NumberColumn(
@@ -132,7 +168,7 @@ if results.empty:
     st.write("Nessun giocatore corrisponde ai filtri.")
     st.stop()
 
-options = {f"{r.display_name} ({r.team_name}, {r.role})": r.player_code for r in results.itertuples(index=False)}
+options = {f"{r.display_name} ({r.team_name}, {ROLE_LABELS.get(r.role, r.role)})": r.player_code for r in results.itertuples(index=False)}
 selected_label = st.selectbox("Seleziona un giocatore", list(options.keys()))
 player = results[results["player_code"] == options[selected_label]].iloc[0]
 
@@ -169,8 +205,8 @@ with st.expander("Come si calcola questo numero? (VAR e fantavoto atteso)"):
     if player["used_role_pool_only"]:
         st.markdown(
             f"- {player['display_name']} non ha partite nello storico usato dal modello "
-            f"(0 partite): ogni simulazione pesca dal pool generico del ruolo `{player['role']}`, "
-            "non dalla sua storia (che non esiste)."
+            f"(0 partite): ogni simulazione pesca dal pool generico del ruolo "
+            f"{ROLE_LABELS.get(player['role'], player['role'])}, non dalla sua storia (che non esiste)."
         )
     else:
         st.markdown(
@@ -195,10 +231,11 @@ with st.expander("Come si calcola questo numero? (VAR e fantavoto atteso)"):
 
     st.markdown("**VAR = fantavoto atteso − livello di replacement**")
     n_slots = league_slots_per_role(ruleset)[player["role"]]
+    role_label = ROLE_LABELS.get(player["role"], player["role"])
     st.markdown(
-        f"- Livello di replacement per il ruolo `{player['role']}`: fantavoto atteso del "
+        f"- Livello di replacement per il ruolo {role_label}: fantavoto atteso del "
         f"giocatore classificato esattamente al **{n_slots}° posto** per quel ruolo "
-        f"({n_slots} slot totali in lega per `{player['role']}`) — il miglior giocatore che "
+        f"({n_slots} slot totali in lega per questo ruolo) — il miglior giocatore che "
         f"NON verrebbe rosterizzato se ogni squadra pescasse dallo stesso pool ordinato. "
         f"Valore: **{player['replacement_level']:.2f}**."
     )
@@ -207,7 +244,10 @@ with st.expander("Come si calcola questo numero? (VAR e fantavoto atteso)"):
         f"**{player['var_mean']:.2f}**"
     )
 
-st.markdown(f"**Round pool**: {player['round_pool']} ({player['list_pool_name']}) — lista `{player['list_state']}`")
+st.markdown(
+    f"**Turno d'asta**: {ROUND_POOL_LABELS.get(player['round_pool'], player['round_pool'])} "
+    f"— lista `{player['list_state']}` (provvisoria del modello)"
+)
 st.markdown(f"**Qualità dati**: {TIER_LABELS.get(player['data_quality_tier'], player['data_quality_tier'])}")
 st.markdown(f"**Partite nello storico usate dal modello**: {int(player['player_games_in_pool'])}")
 
@@ -249,29 +289,48 @@ else:
     st.caption("Nessun driver aggiuntivo oltre allo storico diretto del giocatore.")
 
 my_team_id_for_lock = st.session_state.get("my_team_id", "team_01")
+my_team_label = display_name(my_team_id_for_lock, team_labels)
 currently_locked = is_locked(locks_conn, my_team_id_for_lock, int(player["player_code"]))
-if currently_locked:
-    if st.button(f"Sblocca (obiettivo di `{my_team_id_for_lock}`)"):
-        remove_lock(locks_conn, my_team_id_for_lock, int(player["player_code"]))
-        st.success("Sbloccato.")
-        st.rerun()
-else:
-    if st.button(f"Blocca come obiettivo di `{my_team_id_for_lock}`"):
-        feasibility = check_lock_feasibility(
-            my_team_id_for_lock, int(player["player_code"]), player["role"], ruleset,
-            league_state, list_locks(locks_conn, my_team_id_for_lock),
-        )
-        if not feasibility.ok:
-            st.error(f"Blocco non applicato: {feasibility.reason}")
-        else:
-            add_lock(locks_conn, my_team_id_for_lock, int(player["player_code"]), player["role"])
-            st.success(f"Bloccato come obiettivo di {my_team_id_for_lock}. Vedi pagina **Rosa**.")
+currently_avoided = is_avoided(avoid_conn, my_team_id_for_lock, int(player["player_code"]))
+
+if currently_avoided:
+    st.warning(f"Segnato come **da evitare** per {my_team_label}.")
+
+lock_col, avoid_col = st.columns(2)
+with lock_col:
+    if currently_locked:
+        if st.button(f"Sblocca (era obiettivo di {my_team_label})"):
+            remove_lock(locks_conn, my_team_id_for_lock, int(player["player_code"]))
+            st.success("Sbloccato.")
+            st.rerun()
+    else:
+        if st.button(f"Blocca come obiettivo di {my_team_label}"):
+            feasibility = check_lock_feasibility(
+                my_team_id_for_lock, int(player["player_code"]), player["role"], ruleset,
+                league_state, list_locks(locks_conn, my_team_id_for_lock),
+            )
+            if not feasibility.ok:
+                st.error(f"Blocco non applicato: {feasibility.reason}")
+            else:
+                add_lock(locks_conn, my_team_id_for_lock, int(player["player_code"]), player["role"])
+                st.success(f"Bloccato come obiettivo di {my_team_label}. Vedi pagina **Rosa**.")
+                st.rerun()
+with avoid_col:
+    if currently_avoided:
+        if st.button("Rimuovi dalla lista da evitare"):
+            remove_avoid(avoid_conn, my_team_id_for_lock, int(player["player_code"]))
+            st.success("Rimosso dalla lista da evitare.")
+            st.rerun()
+    else:
+        if st.button("Segna come da evitare"):
+            add_avoid(avoid_conn, my_team_id_for_lock, int(player["player_code"]), player["role"])
+            st.success(f"Segnato come da evitare per {my_team_label}. Vedi pagina **Rosa**.")
             st.rerun()
 
 st.divider()
 st.subheader("Tetto di riferimento (massimo consigliato)")
 st.caption(
-    "Non è una previsione di chi vincerà: i round sono sealed bid risolti "
+    "Non è una previsione di chi vincerà: i turni sono a busta chiusa, decisi "
     "dall'admin (preferenza, poi offerta), non un'asta al miglior offerente in "
     "tempo reale. È un tetto di riferimento da scrivere sulla propria lista, "
     "basato sul budget/rosa residui reali (formula dollar-rule, ADR-2026-022)."
@@ -281,7 +340,7 @@ my_team_id = st.session_state.get("my_team_id", "team_01")
 round_pool = player["round_pool"]
 round_choice = round_pool
 if round_pool == "G3_G4":
-    round_choice = st.radio("Round (G3/G4 condividono lo stesso pool)", ["G3", "G4"], horizontal=True)
+    round_choice = st.radio("Quale turno (3° o 4°, condividono lo stesso pool)", ["G3", "G4"], horizontal=True)
 
 pool_df = search_players(conn, role=player["role"], round_pool=round_pool)[["player_code", "var_mean"]]
 
@@ -293,9 +352,9 @@ except BidRecommendationError as exc:
     st.info(f"Massimo consigliato non disponibile per questo giocatore/squadra: {exc}")
 except ConfigError as exc:
     st.info(
-        f"Massimo consigliato non disponibile: `{my_team_id}` non ha ancora eventi registrati "
-        f"nel round precedente necessario per la formula di budget di `{round_choice}` "
-        f"({exc}). Registra i risultati dei round precedenti nella pagina **Squadre** prima."
+        f"Massimo consigliato non disponibile: {my_team_label} non ha ancora eventi registrati "
+        f"nel turno precedente necessario per la formula di budget di `{round_choice}` "
+        f"({exc}). Registra i risultati dei turni precedenti nella pagina **Squadre** prima."
     )
 else:
     c1, c2, c3 = st.columns(3)
@@ -303,18 +362,18 @@ else:
         "Massimo consigliato (tetto)", rec.max_bid,
         help="Formula 'dollar rule' standard delle aste fantasy: budget discrezionale distribuito per quota di VAR positivo. Traccia sotto.",
     )
-    c2.metric("Budget residuo squadra", rec.remaining_budget, help=f"Budget rimanente di `{my_team_id}` per il round `{round_choice}`, dal ledger vivo.")
+    c2.metric("Budget residuo squadra", rec.remaining_budget, help=f"Budget rimanente di {my_team_label} per questo turno, dal ledger vivo.")
     c3.metric("Slot ancora da riempire", rec.remaining_slots_total, help="Slot di rosa non ancora coperti, per tutti i ruoli, letti dal ledger vivo.")
 
     with st.expander("Come si calcola questo numero? (massimo consigliato)"):
         st.markdown(
-            f"1. Budget residuo squadra `{my_team_id}` per `{round_choice}`: **{rec.remaining_budget}**\n"
+            f"1. Budget residuo di {my_team_label} per questo turno: **{rec.remaining_budget}**\n"
             f"2. Slot ancora da riempire (incluso questo): **{rec.remaining_slots_total}** → riserva "
             f"1 credito per ciascuno degli altri **{rec.reserve_for_other_slots}** slot\n"
             f"3. Budget discrezionale = {rec.remaining_budget} − {rec.reserve_for_other_slots} = "
             f"**{rec.discretionary_budget}**\n"
             f"4. VAR di {player['display_name']}: **{rec.player_var:.2f}**; somma VAR positivo nel "
-            f"pool residuo dello stesso round/ruolo: **{rec.pool_var_sum:.2f}**\n"
+            f"pool residuo dello stesso turno/ruolo: **{rec.pool_var_sum:.2f}**\n"
             f"5. Quota VAR = {rec.player_var:.2f} / {rec.pool_var_sum:.2f} = **{rec.var_share:.1%}**\n"
             f"6. Massimo consigliato = 1 + {rec.var_share:.1%} × {rec.discretionary_budget} = "
             f"**{rec.max_bid}**"
