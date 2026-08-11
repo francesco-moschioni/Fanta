@@ -16,7 +16,7 @@ from pathlib import Path
 import streamlit as st
 
 from fantacalcio.auction.bid_recommendation import VOTI_TO_DOMAIN_ROLE
-from fantacalcio.config import load_ruleset
+from fantacalcio.config import ConfigError, load_ruleset
 from fantacalcio.domain import AssignmentEvent, AssignmentItem, DomainError, Role, VoidEvent, replay
 from fantacalcio.persistence.ledger_store import (
     append_event,
@@ -103,7 +103,23 @@ for team_id in TEAM_IDS:
             "A": f"{team.role_count(Role.FWD)}/{role_targets[Role.FWD]}",
         }
     )
-st.dataframe(rows, use_container_width=True, hide_index=True)
+st.dataframe(
+    rows,
+    use_container_width=True,
+    hide_index=True,
+    column_config={
+        "Round corrente": st.column_config.TextColumn(
+            help="Ultimo round in cui questa squadra ha almeno un evento registrato nel ledger."
+        ),
+        "Budget residuo": st.column_config.TextColumn(
+            help="Budget disponibile meno speso per il round corrente, dal replay del ledger vivo (eventi annullati esclusi)."
+        ),
+        "P": st.column_config.TextColumn(help="Portieri acquistati / slot totali (blocco portieri, config/auction_rules.v1.yaml)."),
+        "D": st.column_config.TextColumn(help="Difensori acquistati / slot totali di ruolo."),
+        "C": st.column_config.TextColumn(help="Centrocampisti acquistati / slot totali di ruolo."),
+        "A": st.column_config.TextColumn(help="Attaccanti acquistati / slot totali di ruolo."),
+    },
+)
 
 st.divider()
 st.subheader("Registra un risultato")
@@ -153,7 +169,7 @@ if submitted:
                 )
                 try:
                     replay(ruleset, load_events(ledger_conn) + [candidate])
-                except DomainError as exc:
+                except (DomainError, ConfigError) as exc:
                     st.error(f"Evento non valido, non registrato: {exc}")
                 else:
                     append_event(ledger_conn, candidate)

@@ -2,27 +2,24 @@
 
 Compilare prima di ogni modifica significativa e mantenere lo scope a una singola unità verificabile.
 
-- Obiettivo: M4 slice 2 — ledger vivo persistente (SQLite, ADR-2026-008) + tabellone squadre + registrazione manuale dei risultati pubblicati dall'admin + tetto di riferimento (massimo consigliato) nella scheda giocatore.
-- Perché ora: la slice 1 (ricerca/scheda, ADR-2026-027) è sola lettura su dati statici; questa slice collega il ledger vivo (già costruito in M0/M3: `src/fantacalcio/domain.py`, `src/fantacalcio/ledger_io.py`, `src/fantacalcio/auction/bid_recommendation.py`) così budget/rosa/massimo consigliato riflettano lo stato reale dell'asta, non uno snapshot statico.
-- **Vincolo di dominio importante** (`config/auction_rules.v1.yaml`): tutti i round G1-G4 sono **sealed bid**, risolti dall'admin dopo la chiusura di ciascun turno — non è un'asta live interattiva multi-squadra dentro l'app. Questa slice quindi:
-  - NON implementa un'"asta live" dove le squadre offrono in tempo reale l'una contro l'altra.
-  - Registra manualmente i **risultati già pubblicati dall'admin** (chi ha vinto cosa, a che prezzo, in che round) — un form di registrazione, non un meccanismo di offerta.
-  - Il "massimo consigliato" (formula dollar-rule già validata, ADR-2026-022) è un **tetto di riferimento** da scrivere sulla propria lista sealed-bid per il prossimo round, non una previsione di chi vincerà (la vittoria dipende da preferenza-poi-offerta risolte dall'admin, non dal miglior offerente in tempo reale). Etichettato esplicitamente così nella UI.
-- Fuori scope, esplicitamente bloccato:
-  - Import automatico del formato file admin (formato non ancora noto, arriva via Google Form — `docs/OPEN_QUESTIONS.md` "Formato effettivo dei file admin da importare").
-  - Risoluzione automatica delle preferenze sealed-bid (`resolve_sealed_bid_round` resta `NotImplementedError`, bloccato dal tie-breaker non confermato).
-  - Nomi reali squadre/partecipanti (non ancora in repo, `private_participants/` vuoto): uso identificativi generici (`team_01`..`team_20`, quanti quanto `ruleset.teams`), sostituibili in futuro senza toccare lo schema.
-  - Command palette, alert non bloccanti, apprendimento mercato, cockpit "velocità estrema" — slice successive.
-- File probabilmente coinvolti: `src/fantacalcio/persistence/ledger_store.py` (nuovo, riusa la serializzazione già in `src/fantacalcio/ledger_io.py`, nessuna duplicazione schema), `app/pages/2_Squadre.py` (nuovo), `app/pages/1_Giocatori.py` (aggiunta: selezione "la mia squadra" + tetto di riferimento), test del data layer.
-- Criteri di accettazione: append-only reale (mai UPDATE/DELETE su eventi esistenti, undo = nuovo `VoidEvent`); replay deterministico dal ledger persistito identico a quello in-memory già testato in M0; nessuna invenzione di nomi squadra/algoritmi di risoluzione non confermati; round G3/G4 gestiti esplicitamente come round distinti (non "G3_G4", che è solo un'etichetta di visualizzazione di `round_pools.py`) quando si registra un evento reale; verificato in browser prima di dichiarare fatto.
+- Obiettivo: M4 slice 3 — spiegabilità/provenienza di ogni numero derivato mostrato nella UI (VAR, fantavoto atteso, massimo consigliato), su richiesta esplicita dell'utente: tooltip al passaggio del mouse + pannello con la traccia di calcolo reale (formula + numeri veri del giocatore selezionato, non testo generico).
+- Perché ora: richiesta esplicita dell'utente, con l'indicazione che vale anche per le slice future ("anche in futuro... tutto ben spiegato"). Diventa un principio permanente, non solo di questa slice — registrato in `docs/UX_PRODUCT.md` così le prossime slice lo ereditano senza doverlo richiedere ogni volta.
+- In scope:
+  - `docs/UX_PRODUCT.md`: nuovo principio esplicito ("Spiegabilità") — ogni numero derivato mostrato in UI deve avere una definizione breve (tooltip) e, dove sensato, una traccia di calcolo con i valori reali del record selezionato (non una descrizione statica).
+  - `app/pages/1_Giocatori.py`: tooltip `help=` sulle metriche (VAR, fantavoto atteso, mediana/P10-P90); pannello espandibile "Come si calcola questo numero?" con traccia reale per VAR (fantavoto atteso − livello di replacement, con N di riferimento del ruolo letto da config), per il fantavoto atteso (bootstrap Monte Carlo: partite proprie nel pool, peso n/(n+60), eventuali aggiustamenti Dixon-Coles/FVM già mostrati come driver, ora collegati numericamente), e per il massimo consigliato (passaggi della formula dollar-rule con i numeri reali di `MaxBidRecommendation`).
+  - `app/pages/2_Squadre.py`: tooltip sulle colonne del tabellone (budget, slot per ruolo) via `column_config`.
+- Fuori scope: spiegabilità generativa via LLM (CLAUDE.md vieta che un LLM calcoli risultati autoritativi; qui si tratta solo di visualizzare numeri già calcolati dal motore deterministico, mai di farli spiegare da un modello linguistico), costruttore rosa, import admin.
+- File probabilmente coinvolti: `docs/UX_PRODUCT.md`, `app/pages/1_Giocatori.py`, `app/pages/2_Squadre.py`.
+- Criteri di accettazione: ogni numero spiegato usa i valori reali del giocatore/squadra selezionato (mai testo statico spacciato per specifico); nessun nuovo calcolo nella UI (solo visualizzazione di numeri già prodotti dal motore/dati già in tabella); verificato in browser prima di dichiarare fatto.
 - Comandi test/quality: `pytest -q`.
-- Seed: non applicabile (nessuna componente stocastica in questa slice).
+- Seed: non applicabile.
 - Delegazione: vietata.
-- Decisioni aperte/blocchi: nessuno per questa slice (i blocchi reali — formato import admin, tie-breaker — restano esplicitamente fuori scope, non aggirati).
+- Decisioni aperte/blocchi: nessuno.
 
 ## Progresso
 
-- Stato: **completato** (ADR-2026-028). Verificato in browser end-to-end: registrazione G1→G2, undo, tetto di riferimento.
-- `src/fantacalcio/persistence/ledger_store.py`, `domain.effective_events()`, `app/pages/2_Squadre.py`, estensione `app/pages/1_Giocatori.py`. 258 test totali passano.
-- **Bug critico trovato e corretto durante il testing**: `domain.replay()` calcolava il budget di round successivi (es. G2 = remaining_G1 + 100) usando un dizionario di residui condiviso fra tutte le squadre invece che per-squadra — avrebbe corrotto i budget reali nell'asta vera. Corretto (`remaining_by_round_per_team`), test di regressione aggiunto. Vedi ADR-2026-028.
-- Prossima azione (M4 slice 3, non ancora scoped in dettaglio): costruttore rosa visuale con lock, oppure import del formato file admin quando disponibile (venerdì sera, ancora sconosciuto).
+- Stato: **completato** (ADR-2026-029). Verificato in browser con l'esempio esatto dell'utente (VAR di Lautaro Martinez: 7,64 − 6,09 = 1,55, con traccia completa).
+- Principio permanente registrato in `docs/UX_PRODUCT.md` ("Spiegabilità"), vincolante per le prossime slice M4. Tooltip + pannelli di traccia in `app/pages/1_Giocatori.py` e `app/pages/2_Squadre.py`.
+- Due bug reali trovati e corretti durante la verifica in browser: `ConfigError` non catturato in entrambe le pagine quando il ledger non ha ancora i dati del round precedente necessario per una formula di budget — causava un crash invece di un messaggio chiaro.
+- 258 test totali passano (nessun nuovo test: slice puramente di visualizzazione).
+- Prossima azione (M4 slice 4, non ancora scoped): costruttore rosa visuale con lock, oppure import del formato file admin quando disponibile.

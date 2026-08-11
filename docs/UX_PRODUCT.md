@@ -17,6 +17,15 @@ Separare `preparazione`, `asta live` e `post-asta/giornata`. Tutte le viste chia
 
 Mostrare prima: valore atteso, mediana/P10–P90, probabilità di voto, valore sopra replacement, valore marginale per la rosa, prezzo atteso, offerta consigliata e massimo dinamico, compatibilità slot/moduli, driver positivi, rischi, confidenza, `as_of` e provenienza. Consentire confronto con massimo tre alternative. Dettagli e distribuzioni in pannelli espandibili.
 
+## Spiegabilità (principio permanente, vale per ogni slice UI presente e futura)
+
+Ogni numero derivato mostrato nella UI (VAR, fantavoto atteso, massimo consigliato, budget, ecc.) deve avere:
+
+- una definizione breve accessibile al passaggio del mouse (tooltip/`help`), non solo il numero nudo;
+- dove sensato, una traccia di calcolo espandibile con i **valori reali** del record selezionato (formula + numeri di quel giocatore/quella squadra specifici), non una descrizione statica generica che sarebbe identica per chiunque.
+
+La UI non calcola nulla di nuovo per produrre queste spiegazioni: mostra solo la scomposizione di un numero già prodotto dal motore deterministico (es. VAR = fantavoto atteso − livello di replacement, entrambi già colonne calcolate). Nessuna spiegazione generata da un LLM: è visualizzazione di aritmetica già fatta da codice deterministico, mai testo prodotto da un modello linguistico spacciato per calcolo (`CLAUDE.md`: un LLM può spiegare risultati ma non calcolarli).
+
 ## Costruttore visuale
 
 - Campo grafico durante la composizione, con titolari, panchina e obiettivi non acquistati distinti.

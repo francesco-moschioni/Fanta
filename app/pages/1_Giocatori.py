@@ -14,7 +14,8 @@ import pandas as pd
 import streamlit as st
 
 from fantacalcio.auction.bid_recommendation import BidRecommendationError, recommend_max_bid
-from fantacalcio.config import load_ruleset
+from fantacalcio.auction.replacement import league_slots_per_role
+from fantacalcio.config import ConfigError, load_ruleset
 from fantacalcio.persistence.ledger_store import connect as connect_ledger, load_current_league_state
 from fantacalcio.persistence.player_table import (
     DEFAULT_DB_PATH,
@@ -23,6 +24,7 @@ from fantacalcio.persistence.player_table import (
     get_build_meta,
     search_players,
 )
+from fantacalcio.scoring.monte_carlo import DEFAULT_PRIOR_GAMES
 
 RULESET_PATH = Path("config/auction_rules.v1.yaml")
 
@@ -39,7 +41,13 @@ def _get_connection():
     return connect()
 
 
+@st.cache_resource
+def _get_ruleset():
+    return load_ruleset(RULESET_PATH)
+
+
 conn = _get_connection()
+ruleset = _get_ruleset()
 meta = get_build_meta(conn)
 st.caption(
     f"Dati costruiti il {meta.get('built_at', '?')[:19]} UTC da "
@@ -88,7 +96,19 @@ display_cols = {
     "data_quality_tier": "Qualità dati",
 }
 table = results[list(display_cols.keys())].rename(columns=display_cols)
-st.dataframe(table, use_container_width=True, hide_index=True)
+st.dataframe(
+    table,
+    use_container_width=True,
+    hide_index=True,
+    column_config={
+        "Fantavoto atteso": st.column_config.NumberColumn(
+            help="Media delle simulazioni Monte Carlo (bootstrap sulla storia reale del giocatore/ruolo). Dettagli nella scheda sotto."
+        ),
+        "VAR": st.column_config.NumberColumn(
+            help="Valore sopra replacement: fantavoto atteso meno il livello di replacement del ruolo. Dettagli nella scheda sotto."
+        ),
+    },
+)
 
 st.divider()
 st.subheader("Scheda giocatore")
@@ -102,14 +122,75 @@ selected_label = st.selectbox("Seleziona un giocatore", list(options.keys()))
 player = results[results["player_code"] == options[selected_label]].iloc[0]
 
 col1, col2, col3 = st.columns(3)
-col1.metric("Fantavoto atteso (media simulata)", f"{player['sim_mean']:.2f}")
-col2.metric("Mediana", f"{player['sim_median']:.2f}")
-col3.metric("P10 – P90", f"{player['sim_p10']:.2f} – {player['sim_p90']:.2f}")
+col1.metric(
+    "Fantavoto atteso (media simulata)",
+    f"{player['sim_mean']:.2f}",
+    help="Media di 1000 simulazioni Monte Carlo (bootstrap su righe storiche reali voto+eventi, non una formula chiusa). Traccia di calcolo sotto.",
+)
+col2.metric("Mediana", f"{player['sim_median']:.2f}", help="Mediana delle stesse 1000 simulazioni.")
+col3.metric(
+    "P10 – P90",
+    f"{player['sim_p10']:.2f} – {player['sim_p90']:.2f}",
+    help="Intervallo tra il 10° e il 90° percentile delle simulazioni: 80% dei possibili esiti cade in questo range.",
+)
 
 col4, col5, col6 = st.columns(3)
-col4.metric("Valore sopra replacement (VAR)", f"{player['var_mean']:.2f}")
-col5.metric("VAR range (P10–P90)", f"{player['var_p10']:.2f} – {player['var_p90']:.2f}")
-col6.metric("Quotazione asta", f"{player['quotazione_asta']}")
+col4.metric(
+    "Valore sopra replacement (VAR)",
+    f"{player['var_mean']:.2f}",
+    help="Fantavoto atteso meno il livello di replacement del ruolo (il valore del miglior giocatore che NON verrebbe rosterizzato). Traccia di calcolo sotto.",
+)
+col5.metric(
+    "VAR range (P10–P90)",
+    f"{player['var_p10']:.2f} – {player['var_p90']:.2f}",
+    help="P10/P90 del giocatore meno il livello di replacement medio del ruolo (non una convoluzione completa delle due distribuzioni).",
+)
+col6.metric("Quotazione asta", f"{player['quotazione_asta']}", help="Quotazione dal listone ufficiale 2026/27 (non calcolata dal modello).")
+
+with st.expander("Come si calcola questo numero? (VAR e fantavoto atteso)"):
+    n_own = int(player["player_games_in_pool"])
+    weight_own = n_own / (n_own + DEFAULT_PRIOR_GAMES) if n_own > 0 else 0.0
+    st.markdown("**Fantavoto atteso (bootstrap Monte Carlo)**")
+    if player["used_role_pool_only"]:
+        st.markdown(
+            f"- {player['display_name']} non ha partite nello storico usato dal modello "
+            f"(0 partite): ogni simulazione pesca dal pool generico del ruolo `{player['role']}`, "
+            "non dalla sua storia (che non esiste)."
+        )
+    else:
+        st.markdown(
+            f"- Partite proprie nello storico: **{n_own}**. Peso storia propria = "
+            f"n / (n + {DEFAULT_PRIOR_GAMES:.0f}) = {n_own} / ({n_own} + {DEFAULT_PRIOR_GAMES:.0f}) "
+            f"= **{weight_own:.1%}** — con questa probabilità ogni simulazione pesca da una "
+            f"partita reale di {player['display_name']}, altrimenti dal pool generico del ruolo."
+        )
+    if player.get("used_fvm_prior"):
+        st.markdown(
+            "- Storico troppo basso (< 10 partite): il pool generico usato non è la media "
+            "piatta di ruolo ma un pool segmentato per FVM (valutazione di mercato Fantacalcio) "
+            "— vedi ADR-2026-024."
+        )
+    adj = pd.to_numeric(player.get("team_strength_adjustment"), errors="coerce")
+    if pd.notna(adj) and abs(adj) > 1e-9:
+        st.markdown(
+            f"- Aggiustamento forza-squadra (Dixon-Coles): **{adj:+.2f}** aggiunto a ogni "
+            f"simulazione, perché la squadra attuale ({player['team_name']}) ha una forza "
+            "diversa dal contesto-squadra storico medio del giocatore — vedi ADR-2026-023."
+        )
+
+    st.markdown("**VAR = fantavoto atteso − livello di replacement**")
+    n_slots = league_slots_per_role(ruleset)[player["role"]]
+    st.markdown(
+        f"- Livello di replacement per il ruolo `{player['role']}`: fantavoto atteso del "
+        f"giocatore classificato esattamente al **{n_slots}° posto** per quel ruolo "
+        f"({n_slots} slot totali in lega per `{player['role']}`) — il miglior giocatore che "
+        f"NON verrebbe rosterizzato se ogni squadra pescasse dallo stesso pool ordinato. "
+        f"Valore: **{player['replacement_level']:.2f}**."
+    )
+    st.markdown(
+        f"- VAR = {player['sim_mean']:.2f} − {player['replacement_level']:.2f} = "
+        f"**{player['var_mean']:.2f}**"
+    )
 
 st.markdown(f"**Round pool**: {player['round_pool']} ({player['list_pool_name']}) — lista `{player['list_state']}`")
 st.markdown(f"**Qualità dati**: {TIER_LABELS.get(player['data_quality_tier'], player['data_quality_tier'])}")
@@ -152,7 +233,6 @@ round_choice = round_pool
 if round_pool == "G3_G4":
     round_choice = st.radio("Round (G3/G4 condividono lo stesso pool)", ["G3", "G4"], horizontal=True)
 
-ruleset = load_ruleset(RULESET_PATH)
 ledger_conn = connect_ledger()  # auto-crea un ledger vuoto se non esiste ancora
 league_state = load_current_league_state(ledger_conn, ruleset)
 pool_df = search_players(conn, role=player["role"], round_pool=round_pool)[["player_code", "var_mean"]]
@@ -163,15 +243,34 @@ try:
     )
 except BidRecommendationError as exc:
     st.info(f"Massimo consigliato non disponibile per questo giocatore/squadra: {exc}")
+except ConfigError as exc:
+    st.info(
+        f"Massimo consigliato non disponibile: `{my_team_id}` non ha ancora eventi registrati "
+        f"nel round precedente necessario per la formula di budget di `{round_choice}` "
+        f"({exc}). Registra i risultati dei round precedenti nella pagina **Squadre** prima."
+    )
 else:
     c1, c2, c3 = st.columns(3)
-    c1.metric("Massimo consigliato (tetto)", rec.max_bid)
-    c2.metric("Budget residuo squadra", rec.remaining_budget)
-    c3.metric("Slot ancora da riempire", rec.remaining_slots_total)
-    st.caption(
-        f"Squadra: `{my_team_id}` (cambiabile nella pagina Squadre). Quota VAR sul pool "
-        f"residuo: {rec.var_share:.1%}. Budget discrezionale dopo riserva slot: {rec.discretionary_budget}."
+    c1.metric(
+        "Massimo consigliato (tetto)", rec.max_bid,
+        help="Formula 'dollar rule' standard delle aste fantasy: budget discrezionale distribuito per quota di VAR positivo. Traccia sotto.",
     )
+    c2.metric("Budget residuo squadra", rec.remaining_budget, help=f"Budget rimanente di `{my_team_id}` per il round `{round_choice}`, dal ledger vivo.")
+    c3.metric("Slot ancora da riempire", rec.remaining_slots_total, help="Slot di rosa non ancora coperti, per tutti i ruoli, letti dal ledger vivo.")
+
+    with st.expander("Come si calcola questo numero? (massimo consigliato)"):
+        st.markdown(
+            f"1. Budget residuo squadra `{my_team_id}` per `{round_choice}`: **{rec.remaining_budget}**\n"
+            f"2. Slot ancora da riempire (incluso questo): **{rec.remaining_slots_total}** → riserva "
+            f"1 credito per ciascuno degli altri **{rec.reserve_for_other_slots}** slot\n"
+            f"3. Budget discrezionale = {rec.remaining_budget} − {rec.reserve_for_other_slots} = "
+            f"**{rec.discretionary_budget}**\n"
+            f"4. VAR di {player['display_name']}: **{rec.player_var:.2f}**; somma VAR positivo nel "
+            f"pool residuo dello stesso round/ruolo: **{rec.pool_var_sum:.2f}**\n"
+            f"5. Quota VAR = {rec.player_var:.2f} / {rec.pool_var_sum:.2f} = **{rec.var_share:.1%}**\n"
+            f"6. Massimo consigliato = 1 + {rec.var_share:.1%} × {rec.discretionary_budget} = "
+            f"**{rec.max_bid}**"
+        )
 
 with st.expander("Non ancora disponibile in questa vista"):
     st.write(
