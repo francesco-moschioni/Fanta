@@ -2,23 +2,20 @@
 
 Compilare prima di ogni modifica significativa e mantenere lo scope a una singola unità verificabile.
 
-- Obiettivo: `TODO` — raccomandazione offerta massima collegata al ledger vivo completata (ADR-2026-022), vedi Progresso.
-- Perché ora: `TODO`
-- In scope: `TODO`
-- Fuori scope: `TODO`
-- Documenti canonici da leggere: `TODO`
-- File/simboli probabilmente coinvolti: `TODO`
-- Criteri di accettazione: `TODO`
-- Comandi test/quality: `TODO`
-- Data cutoff/snapshot/`as_of`: `TODO o N/A`
-- Seed, se applicabile: `TODO`
-- Delegazione: vietata | Gemini per `TODO` | subagente `TODO` per `TODO`
-- Decisioni aperte/blocchi: `TODO`
+- Obiettivo: 4 miglioramenti in sequenza, tutti usando dati già ingeriti (nessuna nuova fonte esterna): (1) collegare Dixon-Coles al Monte Carlo del voto, (2) usare FVM come prior secondario per giocatori a basso storico, (3) recuperare le quote scommesse da football-data.co.uk, (4) decadimento temporale nel bootstrap voto/partecipazione.
+- Perché ora: audit ha trovato che Dixon-Coles (validato, ADR-2026-011) non è mai riusato dal voto/Monte Carlo, e FVM/quote scommesse sono dati già presenti mai sfruttati.
+- In scope blocco 1: rating attacco/difesa per squadra da Dixon-Coles, confrontati contro il contesto-squadra storico medio del giocatore (pesato per partite), applicati come aggiustamento al campione Monte Carlo per ruoli offensivi (A/C, su rating attacco) e difensivi (D, su rating difesa — P escluso, già coperto da `team_goals_conceded`). Coefficiente di scala validato via walk-forward (stesso schema di `prior_games` in ADR-2026-012), non inventato.
+- Fuori scope: aggiustamento per P (già gestito diversamente), rimodellazione completa del bootstrap (resta un aggiustamento additivo post-hoc, non una riscrittura del meccanismo di campionamento).
+- Documenti canonici: ADR-2026-011 (Dixon-Coles), ADR-2026-012/018 (voto/Monte Carlo).
+- File probabilmente coinvolti: `src/fantacalcio/scoring/team_strength_adjustment.py`, test, script di validazione.
+- Criteri di accettazione: coefficiente scelto per validazione onesta (walk-forward), non arbitrario; nessun peggioramento della correlazione con `Fm` reale rispetto alla baseline senza aggiustamento, altrimenti scartato con la stessa onestà usata per il tentativo fallito su porta-inviolata-difensori (ADR-2026-017).
+- Comandi test/quality: `pytest -q`.
+- Seed: eredita 42.
+- Delegazione: vietata.
+- Decisioni aperte/blocchi: nessuno.
 
 ## Progresso
 
-- Stato: **raccomandazione offerta massima completata** (ADR-2026-022). Con questo, lo strumento produce un vero "quanto offrire ora" collegato allo stato reale dell'asta, non solo un elenco statico.
-- Ultimo commit/stato verificato: sessione 2026-08-11, `pytest -q` → 201 passed.
-- Sintesi: `src/fantacalcio/auction/bid_recommendation.py`, formula standard "dollar rule" (riserva 1 credito/slot + distribuzione proporzionale al VAR), budget/slot letti dal replay del ledger. Trovato e corretto un bug reale (confronto ID giocatore stringa-vs-intero che non escludeva mai i già assegnati). Dimostrato su dati reali: la raccomandazione sale quando i rivali comprano alternative, scende quando la propria squadra consuma budget/slot.
-- **Stato complessivo**: M0 ✅, M1 ✅, M2 ✅, M3 con pezzo centrale funzionante (VAR → pool → raccomandazione live). Dichiaratamente semplificato: manca domanda avversari modellata, inflazione di mercato osservata, fit di modulo/rischio (richiedono uno storico di aste reali che non abbiamo).
-- Prossima azione possibile: interfaccia utente minima per usare questo durante l'asta reale (M4), oppure raffinare la formula di offerta con apprendimento di mercato quando ci saranno dati d'asta reali da osservare (M5).
+- Stato: not started
+- Ultimo commit/stato verificato: `f32a105`
+- Prossima azione: implementare `src/fantacalcio/scoring/team_strength_adjustment.py`.
