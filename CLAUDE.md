@@ -24,10 +24,9 @@ Precedence: latest approved ADR > canonical docs/config > research design > arch
 - Locked players remain locked. If infeasible, explain the conflicting constraint and minimum relaxation.
 - Forecasts are distributions, not single magic numbers. Show uncertainty, freshness, provenance, and active fallbacks.
 - Prediction is not bid. Bid/value logic must include replacement level, roster fit, scarcity, remaining supply, budget shadow price, future rounds, market uncertainty, and opponent demand.
-- All scoring, assignment, optimization, budget accounting, replay, and simulation are deterministic/seeded code. An LLM may explain results but must not compute authoritative results.
+- All scoring, assignment, optimization, budget accounting, replay, and simulation are deterministic/seeded code. 
 - Raw imports are immutable. Never join players or teams only by display name.
 - Every feature must have an `available_at`/`as_of` definition and pass leakage checks.
-- Never scrape Fantacalcio, call private/undocumented endpoints, bypass authentication, or redistribute raw/derived proprietary data. Manual user-owned imports are allowed and must retain provenance.
 - Never expose `.env`, credentials, cookies, private participant data, or raw licensed datasets to external models.
 - Preserve an append-only, replayable ledger for auction events; edit/undo creates state from valid events rather than mutating history invisibly.
 
