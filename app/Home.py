@@ -7,8 +7,9 @@ from pathlib import Path
 
 import streamlit as st
 
+from fantacalcio.auction.market_supply import compute_goalkeeper_club_supply, compute_role_supply
 from fantacalcio.config import load_ruleset
-from fantacalcio.persistence.player_table import DEFAULT_DB_PATH, connect, get_build_meta
+from fantacalcio.persistence.player_table import DEFAULT_DB_PATH, connect, get_build_meta, search_players
 from fantacalcio.persistence.team_labels_store import connect as connect_labels, get_label, set_label
 
 st.set_page_config(page_title="Fantacalcio — Home", layout="wide")
@@ -128,3 +129,44 @@ st.warning(
     "strumento — non è ancora la lista ufficiale dell'admin (arriva via Google Form). "
     "Fidati per farti un'idea, ma verifica sulla lista reale quando arriva."
 )
+
+st.divider()
+st.subheader("Avvisi di mercato")
+st.caption(
+    "Quanti giocatori esistono davvero nel listone 2026/27 per ciascun ruolo, "
+    "confrontati con quanti ne servirebbero in tutto per riempire le rose di "
+    "tutte le 20 squadre (dato reale, non una previsione — trovato eseguendo "
+    "una simulazione completa dell'asta, non solo osservando il listone)."
+)
+
+ROLE_LABELS_HOME = {"P": "Portieri", "D": "Difensori", "C": "Centrocampisti", "A": "Attaccanti"}
+full_pool = search_players(conn)
+supply_rows = [
+    {
+        "Ruolo": ROLE_LABELS_HOME.get(s.role, s.role),
+        "Disponibili nel listone": s.available,
+        "Richiesti in lega": s.required,
+        "Carenza": str(s.shortfall) if s.shortfall > 0 else "—",
+    }
+    for s in compute_role_supply(full_pool, ruleset)
+]
+st.dataframe(supply_rows, width="stretch", hide_index=True)
+
+shortages = [s for s in compute_role_supply(full_pool, ruleset) if s.shortfall > 0]
+if shortages:
+    for s in shortages:
+        st.warning(
+            f"**{ROLE_LABELS_HOME.get(s.role, s.role)}**: mancano {s.shortfall} giocatori "
+            f"({s.available} disponibili contro {s.required} richiesti in tutta la lega) — "
+            "non tutte le squadre riusciranno a completare questo ruolo, indipendentemente "
+            "da quanto spendono."
+        )
+
+thin_clubs = [c for c in compute_goalkeeper_club_supply(full_pool, ruleset) if not c.can_form_same_club_block]
+if thin_clubs:
+    club_list = ", ".join(f"{c.team_name} ({c.goalkeeper_count})" for c in thin_clubs)
+    st.warning(
+        f"**Blocco portieri dello stesso club**: {club_list} non hanno abbastanza portieri "
+        f"nel listone per formare un blocco da {ruleset.roster.goalkeeper_block_size} dello "
+        "stesso club — chi punta a un blocco di uno di questi club dovrà per forza mescolare club diversi."
+    )
