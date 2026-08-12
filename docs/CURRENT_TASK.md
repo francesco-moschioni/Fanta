@@ -2,6 +2,14 @@
 
 Compilare prima di ogni modifica significativa e mantenere lo scope a una singola unità verificabile.
 
+- Obiettivo: "confronto moduli" (ADR-2026-039), pianificato con l'utente dopo aver verificato che la rosa fissa già copre tutti gli 8 moduli — implementato come "forza rosa per modulo": per ciascun modulo, somma il VAR dei migliori giocatori posseduti (rosa reale + lock) per ruolo. Approssimazione dichiarata di "undici ideale" (media di stagione, non dati di rischio per giornata), non un sostituto.
+- Stato: **completato**. `src/fantacalcio/auction/formation_strength.py` + sezione in `app/pages/3_Rosa.py`. 328 test passano, verificato in browser, nessun errore.
+- Prossima azione: nessuna pendente da questo ciclo. Precedente (audit adversariale, ADR-2026-038): tre miglioramenti minori non bloccanti loggati ma non implementati (fallback discrezionale piatto per VAR molto negativo, clamp mancante sull'aggiustamento forza-squadra, FVM-prior/Dixon-Coles mai validati congiuntamente) — da riprendere solo se l'utente lo chiede esplicitamente. Resta da decidere con l'utente: "undici ideale" vero (bloccato — serve una fonte dati per probabili formazioni/infortuni, non ancora scelta), o import del formato admin quando arriva (venerdì sera).
+
+---
+
+## Task precedente (archiviata)
+
 - Obiettivo: M4 slice 7 — due parti, richieste insieme dall'utente dopo aver provato l'app in prima persona ("così non si capisce niente"):
   1. **Chiarezza UI** (priorità, blocca la percezione di tutto il resto): nomi squadra personalizzabili (non più solo `team_01`), spiegazione in linguaggio semplice in cima a ogni pagina (cosa fa, quando usarla), Home riscritta come guida reale, valori tecnici tradotti ovunque compaiono (non solo nella scheda giocatore).
   2. **"Rischi di rosa"**: concentrazione di squadra (troppi giocatori dello stesso club reale, `docs/UX_PRODUCT.md`) + lista giocatori da evitare (simmetrica ai lock, stesso meccanismo di persistenza).

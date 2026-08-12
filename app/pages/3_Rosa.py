@@ -1,5 +1,6 @@
 """La mia rosa: rosa reale (dal ledger) + lock di obiettivi pre-asta + rischi
-(docs/CURRENT_TASK.md, M4 slice 5 e 7, costruttore rosa, docs/UX_PRODUCT.md).
++ confronto moduli (docs/CURRENT_TASK.md, M4 slice 5/7/8, costruttore rosa,
+docs/UX_PRODUCT.md).
 
 CLAUDE.md: "Distingui sempre acquistato da ipotetico." Questa pagina separa
 sempre visivamente la rosa reale (eventi nel ledger, già vinti) dai lock
@@ -15,8 +16,9 @@ from pathlib import Path
 import streamlit as st
 
 from fantacalcio.auction.bid_recommendation import budget_remaining_for_round
+from fantacalcio.auction.formation_strength import RosterPlayer, compute_formation_strength
 from fantacalcio.auction.lock_feasibility import check_lock_feasibility
-from fantacalcio.auction.roster_optimizer import Candidate, optimize_roster_completion
+from fantacalcio.auction.roster_optimizer import TOP_N_PER_ROLE, Candidate, optimize_roster_completion
 from fantacalcio.auction.roster_risk import DEFAULT_WARNING_THRESHOLD, compute_club_concentration
 from fantacalcio.config import ConfigError, load_ruleset
 from fantacalcio.domain import Role
@@ -300,6 +302,55 @@ else:
             st.caption(f"{c.team_name}: {c.player_count} giocatori ({names})")
 
 st.divider()
+st.subheader("Confronto moduli")
+st.caption(
+    "Con quale dei moduli ammessi la tua rosa reale rende di più, **in media sulla "
+    "stagione**? Prende i tuoi migliori giocatori per ruolo (rosa reale + obiettivi "
+    "bloccati) e somma il loro VAR per ciascun modulo. **Non è l'undici della "
+    "prossima giornata**: non usa infortuni, probabili formazioni né avversario — "
+    "quei dati non esistono ancora in questo strumento (vedi Home). Comprare per "
+    "l'asta non cambia in base al modulo: la rosa fissa (3 portieri, 8 difensori, "
+    "8 centrocampisti, 5 attaccanti) è già dimensionata per coprirli tutti insieme."
+)
+
+formation_pool: list[RosterPlayer] = []
+for role_code in ROLE_CODES:
+    for pid in team.roster[DOMAIN_ROLE[role_code]]:
+        row = get_player(player_conn, int(pid))
+        if row is not None:
+            formation_pool.append(RosterPlayer(int(pid), role_code, float(row["var_mean"])))
+for lock in my_locks:
+    row = get_player(player_conn, lock.player_code)
+    if row is not None:
+        formation_pool.append(RosterPlayer(lock.player_code, lock.role, float(row["var_mean"])))
+
+if not formation_pool:
+    st.caption("Nessun giocatore ancora in rosa o bloccato: niente da confrontare.")
+else:
+    formation_results = compute_formation_strength(formation_pool, ruleset)
+    formation_rows = [
+        {
+            "Modulo": r.formation,
+            "VAR totale titolari": round(r.total_var, 2),
+            "Copertura completa": "Sì" if r.fully_coverable else "No",
+            "Mancano": ", ".join(f"{n} {ROLE_LABELS_SINGULAR.get(role, role).lower()}" for role, n in r.missing_by_role.items()) or "—",
+        }
+        for r in formation_results
+    ]
+    st.dataframe(formation_rows, width="stretch", hide_index=True)
+
+    best = formation_results[0]
+    if best.fully_coverable:
+        starters_label = ", ".join(_player_label(p.player_code) for p in best.starters)
+        st.markdown(f"**Modulo più forte con quello che hai ora: {best.formation}** — titolari: {starters_label}")
+    else:
+        st.caption(
+            f"Il modulo con VAR totale più alto ({best.formation}) non è ancora coprib"
+            "ile del tutto con quello che possiedi: alcune caselle andrebbero riempite "
+            "con giocatori sotto la media di ruolo o lasciate vuote."
+        )
+
+st.divider()
 st.subheader("Rosa ideale")
 st.caption(
     "Calcola automaticamente quale combinazione di giocatori ancora disponibili "
@@ -371,8 +422,9 @@ if st.button("Calcola rosa ideale"):
             )
             if result.candidate_pool_capped:
                 st.caption(
-                    f"Confronto limitato ai migliori {result.candidates_considered} candidati per VAR per "
-                    "ruolo, per restare veloce — non è una ricerca su tutti i giocatori disponibili."
+                    f"Confronto limitato ai migliori {TOP_N_PER_ROLE} candidati per VAR **per ciascun "
+                    f"ruolo cercato** ({result.candidates_considered} candidati in totale), per restare "
+                    "veloce — non è una ricerca su tutti i giocatori disponibili."
                 )
             if not result.selected:
                 st.caption("Nessuna combinazione trovata entro il budget disponibile.")
