@@ -52,6 +52,31 @@ def test_parse_fixtures_snapshot_empty_response_raises(tmp_path):
         af.parse_fixtures_snapshot(snap, league_id=135, season=2023)
 
 
+def test_call_url_encodes_params_with_spaces(monkeypatch):
+    captured = {}
+
+    class _FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def read(self):
+            return b'{"response": []}'
+
+    def fake_urlopen(req, timeout):
+        captured["url"] = req.full_url
+        return _FakeResponse()
+
+    monkeypatch.setenv("API_FOOTBALL_KEY", "dummy")
+    monkeypatch.setattr(af.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(af, "_last_call_monotonic", None)
+    af._call("teams", {"search": "Paris Saint Germain"}, af.RequestBudget())
+    assert " " not in captured["url"]
+    assert "Paris+Saint+Germain" in captured["url"] or "Paris%20Saint%20Germain" in captured["url"]
+
+
 def test_get_key_missing_raises(monkeypatch):
     monkeypatch.delenv("API_FOOTBALL_KEY", raising=False)
     with pytest.raises(af.ApiFootballError, match="not set"):
@@ -73,6 +98,21 @@ def test_search_player_returns_raw_matches_without_filtering(tmp_path, monkeypat
     assert result.query_name == "Test Player"
     assert result.matches == fake_matches  # unfiltered, no name-only join performed here
     assert budget.used == 1
+
+
+def test_search_team_returns_raw_matches(tmp_path, monkeypatch):
+    fake_matches = [{"team": {"id": 85, "name": "Paris Saint Germain"}}]
+
+    def fake_call(endpoint, params, budget):
+        assert endpoint == "teams"
+        assert params == {"search": "Paris Saint Germain"}
+        budget.consume(1)
+        return b'{"response": []}', {"response": fake_matches}
+
+    monkeypatch.setattr(af, "_call", fake_call)
+    budget = af.RequestBudget()
+    result = af.search_team("Paris Saint Germain", budget, raw_root=tmp_path)
+    assert result.matches == fake_matches
 
 
 def test_search_player_includes_team_id_when_given(tmp_path, monkeypatch):

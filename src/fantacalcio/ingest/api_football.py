@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import os
 import time
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
@@ -73,7 +74,7 @@ def _throttle() -> None:
 def _call(endpoint: str, params: dict, budget: RequestBudget) -> tuple[bytes, dict]:
     budget.consume(1)
     _throttle()
-    qs = "&".join(f"{k}={v}" for k, v in params.items())
+    qs = urllib.parse.urlencode(params)
     url = f"{_BASE}/{endpoint}?{qs}"
     req = urllib.request.Request(url, headers={"x-apisports-key": _get_key()})
     with urllib.request.urlopen(req, timeout=30) as response:
@@ -137,6 +138,30 @@ def write_staged_csv(staged: StagedFixtures, staged_root: Path = Path("data/stag
     out_path = out_dir / f"fixtures_{staged.league_id}_{staged.season}.csv"
     staged.frame.to_csv(out_path, index=False)
     return out_path
+
+
+@dataclass(frozen=True)
+class TeamSearchResult:
+    query_name: str
+    snapshot: RawSnapshot
+    matches: list[dict]  # raw API-Football team summaries, unfiltered
+
+
+def search_team(name: str, budget: RequestBudget, raw_root: Path = DEFAULT_RAW_ROOT) -> TeamSearchResult:
+    """Searches API-Football's team index by name -- used to resolve the
+    `team_id` that `search_player(..., team_id=...)` requires, since the free
+    plan's player search rejects a name-only query (see that function's
+    docstring). Unlike player search, team search does not require this
+    scoping parameter."""
+    content, payload = _call("teams", {"search": name}, budget)
+    snapshot = write_snapshot(
+        content=content,
+        url=f"{_BASE}/teams?search={name}",
+        source_id=SOURCE_ID,
+        filename=f"team_search_{name.replace(' ', '_')}.json",
+        raw_root=raw_root,
+    )
+    return TeamSearchResult(query_name=name, snapshot=snapshot, matches=payload.get("response", []))
 
 
 @dataclass(frozen=True)
