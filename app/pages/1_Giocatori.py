@@ -30,7 +30,7 @@ from fantacalcio.persistence.player_table import (
     search_players,
 )
 from fantacalcio.persistence.team_labels_store import connect as connect_labels, display_name, get_all_labels
-from fantacalcio.scoring.monte_carlo import DEFAULT_PRIOR_GAMES
+from fantacalcio.scoring.monte_carlo import DEFAULT_PRIOR_GAMES, load_calibration_meta
 
 RULESET_PATH = Path("config/auction_rules.v1.yaml")
 
@@ -179,11 +179,25 @@ col1.metric(
     help="Media di 1000 simulazioni Monte Carlo (bootstrap su righe storiche reali voto+eventi, non una formula chiusa). Traccia di calcolo sotto.",
 )
 col2.metric("Mediana", f"{player['sim_median']:.2f}", help="Mediana delle stesse 1000 simulazioni.")
-col3.metric(
-    "P10 – P90",
-    f"{player['sim_p10']:.2f} – {player['sim_p90']:.2f}",
-    help="Intervallo tra il 10° e il 90° percentile delle simulazioni: 80% dei possibili esiti cade in questo range.",
-)
+calibration = load_calibration_meta()
+if calibration:
+    _coverage_pct = calibration["p10_p90_empirical_coverage"]
+    p10_p90_help = (
+        f"Intervallo tra il 10° e il 90° percentile delle 1000 simulazioni per questo "
+        f"giocatore. In un test retrospettivo su {calibration['n_players_validated']} "
+        f"giocatori reali (stagione 2025/26, mai vista dal modello), la fantamedia "
+        f"reale è caduta in un intervallo P10-P90 così costruito il **{_coverage_pct:.0%}** "
+        "delle volte (obiettivo nominale 80%) — usa questo come guida reale alla "
+        "precisione, non l'80% nominale come garanzia."
+    )
+else:
+    p10_p90_help = (
+        "Intervallo tra il 10° e il 90° percentile delle simulazioni (obiettivo "
+        "nominale: 80% degli esiti). Nessun test retrospettivo di calibrazione "
+        "disponibile ancora — esegui scripts/run_monte_carlo_fantavoto.py per "
+        "generarlo."
+    )
+col3.metric("P10 – P90", f"{player['sim_p10']:.2f} – {player['sim_p90']:.2f}", help=p10_p90_help)
 
 col4, col5, col6 = st.columns(3)
 col4.metric(
@@ -243,6 +257,15 @@ with st.expander("Come si calcola questo numero? (VAR e fantavoto atteso)"):
         f"- VAR = {player['sim_mean']:.2f} − {player['replacement_level']:.2f} = "
         f"**{player['var_mean']:.2f}**"
     )
+    if bool(player.get("degenerate_replacement")):
+        st.warning(
+            f"Attenzione: nel listone 2026/27 ci sono **meno giocatori {role_label.lower()} "
+            f"disponibili di quanti slot servano** a tutta la lega ({n_slots} richiesti). "
+            "Il livello di replacement qui sopra è quindi il peggior giocatore ancora "
+            "disponibile, non il miglior giocatore escluso come nelle altre posizioni — "
+            "il VAR di tutti i giocatori di questo ruolo è probabilmente sovrastimato "
+            "rispetto a un ruolo senza carenza (vedi \"Avvisi di mercato\" in Home)."
+        )
 
 st.markdown(
     f"**Turno d'asta**: {ROUND_POOL_LABELS.get(player['round_pool'], player['round_pool'])} "

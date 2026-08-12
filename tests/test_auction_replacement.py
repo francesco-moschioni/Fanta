@@ -92,3 +92,17 @@ class TestAddValueAboveReplacement:
         row = result[result["role"] == "D"].iloc[0]
         assert row["var_p10"] == 7.0 - 8.0
         assert row["var_p90"] == 9.0 - 8.0
+
+    def test_degenerate_replacement_flagged_only_for_shortfall_roles(self, ruleset, monkeypatch):
+        import fantacalcio.auction.replacement as replacement_mod
+
+        # D is short (100 slots, 2 available); C has exactly enough (1 slot, 1 available).
+        monkeypatch.setattr(replacement_mod, "league_slots_per_role", lambda rs: {"D": 100, "C": 1, "A": 1, "P": 1})
+        rows = [("D", 8.0, 7.0, 9.0), ("D", 6.0, 5.0, 7.0)]
+        rows += [("C", 7.0, 6.0, 8.0), ("A", 7.0, 6.0, 8.0), ("P", 6.0, 5.0, 7.0)]
+        pool = _pool(rows)
+        levels = compute_replacement_levels(pool, ruleset)
+        result = add_value_above_replacement(pool, levels)
+
+        assert result[result["role"] == "D"]["degenerate_replacement"].all()
+        assert not result[result["role"] == "C"]["degenerate_replacement"].any()

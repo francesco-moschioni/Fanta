@@ -17,6 +17,8 @@ Report stays local under data/staged/ (gitignored, personal-use-licensed sources
 
 from __future__ import annotations
 
+import json
+from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
@@ -40,6 +42,7 @@ from fantacalcio.scoring.team_strength_adjustment import (
 )
 
 VALIDATION_REPORT_PATH = Path("data/staged/fantacalcio_voti_manual/_monte_carlo_validation.md")
+VALIDATION_META_PATH = Path("data/staged/fantacalcio_voti_manual/_monte_carlo_validation_meta.json")
 APPLICATION_CSV_PATH = Path("data/staged/fantacalcio_voti_manual/_monte_carlo_2026_27.csv")
 APPLICATION_REPORT_PATH = Path("data/staged/fantacalcio_voti_manual/_monte_carlo_2026_27.md")
 QUOTAZIONI_DIR = Path("data/staged/fantacalcio_quotazioni_manual")
@@ -101,7 +104,16 @@ def part_a_validation(rated: pd.DataFrame) -> None:
     rows = []
     for r in target_players.itertuples(index=False):
         result = simulate_fantavoto(r.player_code, r.role, player_pools, role_pools, n_sims=N_SIMS, rng=rng)
-        rows.append({"player_code": r.player_code, "role": r.role, "sim_mean": result.mean, "used_role_pool_only": result.used_role_pool_only})
+        rows.append(
+            {
+                "player_code": r.player_code,
+                "role": r.role,
+                "sim_mean": result.mean,
+                "sim_p10": result.p10,
+                "sim_p90": result.p90,
+                "used_role_pool_only": result.used_role_pool_only,
+            }
+        )
 
     sim_df = pd.DataFrame(rows).astype({"player_code": "int64"})
     statistiche = statistiche.astype({"player_code": "int64"})
@@ -110,6 +122,17 @@ def part_a_validation(rated: pd.DataFrame) -> None:
     corr = merged["sim_mean"].corr(merged["fantamedia"])
     gap = (merged["fantamedia"] - merged["sim_mean"]).mean()
     print(f"Matched {len(merged)} players. Correlation={corr:.4f}, mean gap (theirs-ours)={gap:.4f}")
+
+    # Interval-coverage backtest (statistical audit finding B1, ADR-2026-038): the UI
+    # states "80% of outcomes fall in [P10,P90]" as fact, but nothing in the codebase
+    # had ever checked whether that's actually true out-of-sample. This is an
+    # approximation -- `fantamedia` is a season aggregate, not a single-matchday voto
+    # like the ones the bootstrap draws from -- but it reuses the same walk-forward
+    # split already validated for the mean (ADR-2026-018), so it's the best empirical
+    # check available without new data.
+    in_band = (merged["fantamedia"] >= merged["sim_p10"]) & (merged["fantamedia"] <= merged["sim_p90"])
+    coverage = in_band.mean()
+    print(f"P10-P90 empirical coverage of real season fantamedia: {coverage:.1%} (target 80%)")
 
     lines = [
         "# Monte Carlo fantavoto — validation (walk-forward, season-level)",
@@ -121,6 +144,10 @@ def part_a_validation(rated: pd.DataFrame) -> None:
         f"- Mean gap (real Fm - simulated mean): {gap:.4f}",
         f"- Players with no pre-2025/26 history (role-pool-only fallback): "
         f"{sim_df['used_role_pool_only'].sum()} ({sim_df['used_role_pool_only'].mean():.1%})",
+        f"- **P10-P90 empirical coverage of real season fantamedia: {coverage:.1%}** "
+        f"(nominal target 80%) — approximate: compares a single-matchday simulated "
+        "band against a season-aggregate real value, the best check available without "
+        "per-matchday real outcomes to compare against.",
         "",
         "This is typically meaningfully lower than the same-season engine validation "
         "(ADR-2026-017: 0.51-0.60 correlation), not just slightly -- report the actual "
@@ -133,7 +160,23 @@ def part_a_validation(rated: pd.DataFrame) -> None:
         "say which dominates.",
     ]
     VALIDATION_REPORT_PATH.write_text("\n".join(lines), encoding="utf-8")
+    VALIDATION_META_PATH.write_text(
+        json.dumps(
+            {
+                "p10_p90_empirical_coverage": round(float(coverage), 4),
+                "nominal_target_coverage": 0.80,
+                "n_players_validated": int(len(merged)),
+                "method": "season fantamedia vs. single-matchday sim P10-P90 band, "
+                "walk-forward 2021/22-2024/25 -> 2025/26",
+                "computed_at": datetime.now(timezone.utc).isoformat(),
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
     print(f"Report: {VALIDATION_REPORT_PATH}")
+    print(f"Coverage metadata: {VALIDATION_META_PATH}")
+    return coverage
 
 
 def part_b_application(rated: pd.DataFrame) -> None:

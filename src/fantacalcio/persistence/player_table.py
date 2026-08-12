@@ -38,6 +38,7 @@ REQUIRED_COLUMNS = [
     "var_mean",
     "var_p10",
     "var_p90",
+    "degenerate_replacement",
     "data_quality_tier",
     "round_pool",
     "list_pool_name",
@@ -54,6 +55,7 @@ class BuildResult:
     n_players: int
     source_path: Path
     source_sha256: str
+    source_generated_at: str
     built_at: str
 
 
@@ -61,7 +63,13 @@ def build_player_table(source_csv: Path = SOURCE_CSV, db_path: Path = DEFAULT_DB
     """Rebuilds the DuckDB `players` table from the source CSV, plus a `meta`
     table recording provenance (source path/hash, build timestamp) -- per
     CLAUDE.md's "every feature must have an as_of/provenance definition" rule,
-    the UI must never show this data without saying when/from-what it was built."""
+    the UI must never show this data without saying when/from-what it was built.
+
+    `source_generated_at` (the CSV's own mtime) is tracked separately from
+    `built_at` (when this function ran): a data-quality audit found the UI only
+    showed the latter, which can be much later than when the underlying Monte
+    Carlo/replacement-value calculation actually ran -- e.g. after an unrelated
+    DuckDB rebuild that re-reads an unchanged CSV."""
     if not source_csv.is_file():
         raise FileNotFoundError(
             f"{source_csv} not found. Run scripts/run_monte_carlo_fantavoto.py then "
@@ -73,6 +81,7 @@ def build_player_table(source_csv: Path = SOURCE_CSV, db_path: Path = DEFAULT_DB
         raise ValueError(f"{source_csv} is missing required columns {missing}; got {list(df.columns)}")
 
     source_sha256 = hashlib.sha256(source_csv.read_bytes()).hexdigest()
+    source_generated_at = datetime.fromtimestamp(source_csv.stat().st_mtime, tz=timezone.utc).isoformat()
     built_at = datetime.now(timezone.utc).isoformat()
 
     db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -85,6 +94,7 @@ def build_player_table(source_csv: Path = SOURCE_CSV, db_path: Path = DEFAULT_DB
             [
                 ("source_path", str(source_csv)),
                 ("source_sha256", source_sha256),
+                ("source_generated_at", source_generated_at),
                 ("built_at", built_at),
                 ("n_players", str(len(df))),
             ],
@@ -93,7 +103,12 @@ def build_player_table(source_csv: Path = SOURCE_CSV, db_path: Path = DEFAULT_DB
         conn.close()
 
     return BuildResult(
-        db_path=db_path, n_players=len(df), source_path=source_csv, source_sha256=source_sha256, built_at=built_at
+        db_path=db_path,
+        n_players=len(df),
+        source_path=source_csv,
+        source_sha256=source_sha256,
+        source_generated_at=source_generated_at,
+        built_at=built_at,
     )
 
 

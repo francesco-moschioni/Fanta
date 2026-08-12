@@ -1,3 +1,5 @@
+from datetime import datetime
+
 import pandas as pd
 import pytest
 
@@ -53,6 +55,8 @@ class TestBuildPlayerTable:
         assert meta["source_path"] == str(csv_path)
         assert meta["n_players"] == "2"
         assert meta["source_sha256"] == result.source_sha256
+        assert meta["source_generated_at"] == result.source_generated_at
+        datetime.fromisoformat(meta["source_generated_at"])  # parses as a real timestamp
 
 
 class TestSearchAndQuery:

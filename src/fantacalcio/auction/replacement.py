@@ -91,10 +91,20 @@ def add_value_above_replacement(player_pool: pd.DataFrame, levels: ReplacementLe
     collapsed to a point number: a player's P10 VAR uses their own P10 against the
     role's mean replacement level (a simple, transparent choice -- not a full
     distributional convolution, which would need the two distributions' shapes,
-    not just their quantiles)."""
+    not just their quantiles).
+
+    Also adds `degenerate_replacement`: True for every player whose role has a
+    supply shortfall (fewer players available than league-wide slots, see
+    `shortfall_by_role`). When that happens, replacement level silently becomes
+    "the worst available player" instead of "the best excluded player", which
+    mechanically pushes every player in that role toward VAR >= 0 -- a real
+    change in what the number means, not just noisier data. This flag lets the
+    UI say so on the affected rows instead of only in an aggregate warning
+    (statistical audit finding B2, docs/DECISIONS.md ADR-2026-038)."""
     out = player_pool.copy()
     out["replacement_level"] = out["role"].map(levels.by_role)
     out["var_mean"] = out["sim_mean"] - out["replacement_level"]
     out["var_p10"] = out["sim_p10"] - out["replacement_level"]
     out["var_p90"] = out["sim_p90"] - out["replacement_level"]
+    out["degenerate_replacement"] = out["role"].map(levels.shortfall_by_role).fillna(0) > 0
     return out

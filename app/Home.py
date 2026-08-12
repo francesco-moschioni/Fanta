@@ -117,10 +117,23 @@ def _get_connection():
 conn = _get_connection()
 meta = get_build_meta(conn)
 
-col1, col2, col3 = st.columns(3)
+col1, col2, col3, col4 = st.columns(4)
 col1.metric("Giocatori nella tabella", meta.get("n_players", "?"), help="Quanti giocatori del listone 2026/27 hanno una previsione calcolata.")
-col2.metric("Dati aggiornati il (UTC)", meta.get("built_at", "?")[:19], help="Quando è stata ricostruita l'ultima volta la tabella dei giocatori.")
-col3.metric("Fonte", "M3 replacement values", help="Il file da cui provengono i numeri: fantavoto atteso, VAR, tier di qualità dati.")
+col2.metric(
+    "Calcolo generato il (UTC)",
+    meta.get("source_generated_at", "?")[:19],
+    help="Quando è stato effettivamente calcolato il file con le previsioni "
+    "(simulazione Monte Carlo + valori di rimpiazzo) — la data che conta per "
+    "capire quanto sono \"freschi\" i numeri che vedi.",
+)
+col3.metric(
+    "Caricato in questa app il (UTC)",
+    meta.get("built_at", "?")[:19],
+    help="Quando questo strumento ha letto l'ultima volta il file di calcolo per "
+    "mostrartelo — può essere più recente del calcolo stesso se il file non è "
+    "cambiato nel frattempo.",
+)
+col4.metric("Fonte", "M3 replacement values", help="Il file da cui provengono i numeri: fantavoto atteso, VAR, tier di qualità dati.")
 
 st.caption(f"File sorgente: `{meta.get('source_path', '?')}` (hash `{meta.get('source_sha256', '?')[:12]}`)")
 

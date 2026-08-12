@@ -16,7 +16,9 @@ with little/no history is dominated by the role pool, same as the point estimate
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -26,6 +28,8 @@ from .engine import PlayerMatchdayEvents, score_fantavoto
 DEFAULT_PRIOR_GAMES = 60.0
 DEFAULT_N_SIMS = 1000
 DEFAULT_SEED = 42
+
+DEFAULT_CALIBRATION_META_PATH = Path("data/staged/fantacalcio_voti_manual/_monte_carlo_validation_meta.json")
 
 
 @dataclass(frozen=True)
@@ -178,3 +182,16 @@ def simulate_fantavoto(
         used_role_pool_only=(n == 0),
         samples=samples,
     )
+
+
+def load_calibration_meta(path: Path = DEFAULT_CALIBRATION_META_PATH) -> dict | None:
+    """Reads the P10-P90 empirical coverage backtest written by
+    `scripts/run_monte_carlo_fantavoto.py`'s walk-forward validation pass.
+
+    Returns None if the file doesn't exist yet (e.g. the pipeline hasn't been run) --
+    callers must degrade gracefully, not crash, since this is optional context, not
+    a required input. The UI must show this real, measured number instead of stating
+    the nominal 80% target as fact (statistical audit finding B1, ADR-2026-038)."""
+    if not path.is_file():
+        return None
+    return json.loads(path.read_text(encoding="utf-8"))
