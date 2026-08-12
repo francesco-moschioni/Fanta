@@ -56,3 +56,34 @@ def test_get_key_missing_raises(monkeypatch):
     monkeypatch.delenv("API_FOOTBALL_KEY", raising=False)
     with pytest.raises(af.ApiFootballError, match="not set"):
         af._get_key()
+
+
+def test_search_player_returns_raw_matches_without_filtering(tmp_path, monkeypatch):
+    fake_matches = [{"player": {"name": "Someone Else"}}, {"player": {"name": "Test Player"}}]
+
+    def fake_call(endpoint, params, budget):
+        assert endpoint == "players"
+        assert params == {"search": "Test Player", "season": 2023}
+        budget.consume(1)
+        return b'{"response": []}', {"response": fake_matches}
+
+    monkeypatch.setattr(af, "_call", fake_call)
+    budget = af.RequestBudget()
+    result = af.search_player("Test Player", 2023, budget, raw_root=tmp_path)
+    assert result.query_name == "Test Player"
+    assert result.matches == fake_matches  # unfiltered, no name-only join performed here
+    assert budget.used == 1
+
+
+def test_search_player_includes_team_id_when_given(tmp_path, monkeypatch):
+    seen_params = {}
+
+    def fake_call(endpoint, params, budget):
+        seen_params.update(params)
+        budget.consume(1)
+        return b'{"response": []}', {"response": []}
+
+    monkeypatch.setattr(af, "_call", fake_call)
+    budget = af.RequestBudget()
+    af.search_player("Test Player", 2023, budget, team_id=505, raw_root=tmp_path)
+    assert seen_params == {"search": "Test Player", "season": 2023, "team": 505}

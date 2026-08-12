@@ -140,6 +140,47 @@ def write_staged_csv(staged: StagedFixtures, staged_root: Path = Path("data/stag
 
 
 @dataclass(frozen=True)
+class PlayerSearchResult:
+    query_name: str
+    season: int
+    snapshot: RawSnapshot
+    matches: list[dict]  # raw API-Football player summaries, unfiltered -- caller decides identity match
+
+
+def search_player(
+    name: str, season: int, budget: RequestBudget, team_id: int | None = None, raw_root: Path = DEFAULT_RAW_ROOT
+) -> PlayerSearchResult:
+    """Searches API-Football's player index by name for a given season.
+
+    `team_id` is required in practice, not optional: confirmed by a real call
+    (2026-08-12, data/staged/fantacalcio_voti_manual/_foreign_history_audit.md)
+    that the free plan rejects a name-only global search with "The League or
+    Team field is required with the Search field." A `team_id` must come from
+    something the caller already has reason to believe (a human-supplied
+    hint), never guessed here -- this function does not resolve identity, it
+    only queries a scope the caller already chose.
+
+    Read-only discovery only -- this never joins results into the domain
+    pipeline by name (CLAUDE.md forbids name-only joins); it's for a human to
+    look at candidate matches and their league/team/stats before deciding
+    anything is usable. Free-plan seasons are restricted to 2022-2024
+    (verified 2026-08-10, docs/SOURCE_REGISTER.md)."""
+    params = {"search": name, "season": season}
+    if team_id is not None:
+        params["team"] = team_id
+    content, payload = _call("players", params, budget)
+    qs = "&".join(f"{k}={v}" for k, v in params.items())
+    snapshot = write_snapshot(
+        content=content,
+        url=f"{_BASE}/players?{qs}",
+        source_id=SOURCE_ID,
+        filename=f"player_search_{name.replace(' ', '_')}_{season}_{team_id}.json",
+        raw_root=raw_root,
+    )
+    return PlayerSearchResult(query_name=name, season=season, snapshot=snapshot, matches=payload.get("response", []))
+
+
+@dataclass(frozen=True)
 class FixtureDepthSample:
     fixture_id: int
     lineups_snapshot: RawSnapshot
