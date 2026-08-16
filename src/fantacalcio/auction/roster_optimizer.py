@@ -37,6 +37,20 @@ class RosterOptimizerError(ValueError):
     pass
 
 
+def candidate_price_floor(quotazione_asta: int, admin_quotazione: int | None = None) -> int:
+    """Minimum legal cost for a non-locked candidate: the admin's own
+    per-player quotation when one exists, otherwise the fantacalcio listone
+    quotation. `optimize_roster_completion` must never propose a candidate
+    below this -- in G1/G2 the sealed-bid minimum is the published quotation
+    (ADR-2026-013), so a lower `cost` here would describe an offer the rules
+    don't allow. `admin_quotazione` is `None` today (no per-player admin
+    quotation has been imported yet, `apply_official_admin_list.py`); this
+    function exists so callers don't need to change when one arrives."""
+    if admin_quotazione is not None:
+        return max(admin_quotazione, quotazione_asta)
+    return quotazione_asta
+
+
 @dataclass(frozen=True)
 class Candidate:
     player_code: int

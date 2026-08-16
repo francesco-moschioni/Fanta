@@ -3,8 +3,20 @@ import pytest
 from fantacalcio.auction.roster_optimizer import (
     Candidate,
     RosterOptimizerError,
+    candidate_price_floor,
     optimize_roster_completion,
 )
+
+
+class TestCandidatePriceFloor:
+    def test_no_admin_quotation_uses_fantacalcio_quotation(self):
+        assert candidate_price_floor(quotazione_asta=15, admin_quotazione=None) == 15
+
+    def test_admin_quotation_above_fantacalcio_wins(self):
+        assert candidate_price_floor(quotazione_asta=15, admin_quotazione=20) == 20
+
+    def test_admin_quotation_below_fantacalcio_never_lowers_floor(self):
+        assert candidate_price_floor(quotazione_asta=15, admin_quotazione=5) == 15
 
 
 class TestOptimizeRosterCompletion:

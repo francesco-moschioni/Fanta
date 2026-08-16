@@ -18,7 +18,12 @@ import streamlit as st
 from fantacalcio.auction.bid_recommendation import budget_remaining_for_round
 from fantacalcio.auction.formation_strength import RosterPlayer, compute_formation_strength
 from fantacalcio.auction.lock_feasibility import check_lock_feasibility
-from fantacalcio.auction.roster_optimizer import TOP_N_PER_ROLE, Candidate, optimize_roster_completion
+from fantacalcio.auction.roster_optimizer import (
+    TOP_N_PER_ROLE,
+    Candidate,
+    candidate_price_floor,
+    optimize_roster_completion,
+)
 from fantacalcio.auction.roster_risk import DEFAULT_WARNING_THRESHOLD, compute_club_concentration
 from fantacalcio.config import ConfigError, load_ruleset
 from fantacalcio.domain import Role
@@ -157,29 +162,37 @@ st.caption(
     "Ipotetico, non ancora acquistato. Lock = intenzione di puntare su questo "
     "giocatore, per pianificazione. Non è un'offerta né un acquisto: non tocca "
     "il registro delle aste, non riserva budget reale. Verificato solo per "
-    "fattibilità (ruolo/capacità/disponibilità), non per prezzo."
+    "fattibilità (ruolo/capacità/disponibilità), non per prezzo. Il **prezzo "
+    "pianificato** è quanto TU dichiari di voler pagare — una tua ipotesi, non "
+    "un'offerta garantita né un vincolo (può stare sopra o sotto la quotazione)."
 )
 
 if my_locks:
-    total_estimated_cost = 0
+    total_planned_cost = 0
     lock_rows = []
     for lock in my_locks:
         row = get_player(player_conn, lock.player_code)
         quotazione = int(row["quotazione_asta"]) if row is not None else None
-        if quotazione is not None:
-            total_estimated_cost += quotazione
+        planned = lock.planned_price if lock.planned_price is not None else quotazione
+        if planned is not None:
+            total_planned_cost += planned
         lock_rows.append(
             {
                 "Giocatore": _player_label(lock.player_code),
                 "Ruolo": ROLE_LABELS_SINGULAR.get(lock.role, lock.role),
                 "Quotazione": str(quotazione) if quotazione is not None else "—",
+                "Prezzo pianificato": (
+                    str(lock.planned_price)
+                    if lock.planned_price is not None
+                    else f"{quotazione} (non impostato, uso quotazione)" if quotazione is not None else "—"
+                ),
                 "Nota": lock.note,
             }
         )
     st.dataframe(lock_rows, width="stretch", hide_index=True)
     st.caption(
-        f"Costo stimato totale dei lock (somma quotazioni asta): **{total_estimated_cost}** crediti. "
-        "Stima, non un'offerta garantita: il prezzo reale dipende dalla dinamica dell'asta."
+        f"Costo pianificato totale dei lock: **{total_planned_cost}** crediti (somma dei prezzi "
+        "pianificati, o quotazione dove non impostato). Tua stima, non un'offerta garantita."
     )
 
     with st.form("unlock"):
@@ -196,6 +209,13 @@ else:
 with st.expander("Blocca un nuovo obiettivo"):
     with st.form("lock_player"):
         name_query = st.text_input("Cerca giocatore per nome")
+        planned_price_input = st.number_input(
+            "Prezzo pianificato (quanto pensi di pagarlo, crediti)",
+            min_value=0,
+            value=0,
+            step=1,
+            help="Facoltativo: lascia 0 per usare la quotazione come stima di default. È solo la tua ipotesi.",
+        )
         note = st.text_input("Nota (opzionale)")
         lock_submitted = st.form_submit_button("Cerca e blocca")
 
@@ -219,7 +239,15 @@ with st.expander("Blocca un nuovo obiettivo"):
                 if not feasibility.ok:
                     st.error(f"Blocco non applicato: {feasibility.reason}")
                 else:
-                    add_lock(locks_conn, my_team_id, int(player["player_code"]), player["role"], note)
+                    planned_price = int(planned_price_input) if planned_price_input > 0 else None
+                    add_lock(
+                        locks_conn,
+                        my_team_id,
+                        int(player["player_code"]),
+                        player["role"],
+                        note,
+                        planned_price=planned_price,
+                    )
                     st.success(f"Bloccato: {player['display_name']}")
                     st.rerun()
 
@@ -387,8 +415,13 @@ if st.button("Calcola rosa ideale"):
         locked_player_codes.add(lock.player_code)
         locked_role_counts[lock.role] = locked_role_counts.get(lock.role, 0) + 1
         row = get_player(player_conn, lock.player_code)
-        if row is not None:
-            locked_role_cost[lock.role] = locked_role_cost.get(lock.role, 0) + int(row["quotazione_asta"])
+        if lock.planned_price is not None:
+            lock_cost = lock.planned_price
+        elif row is not None:
+            lock_cost = int(row["quotazione_asta"])
+        else:
+            lock_cost = 0
+        locked_role_cost[lock.role] = locked_role_cost.get(lock.role, 0) + lock_cost
 
     role_slots_needed = {}
     for role_code in eligible_roles:
@@ -413,7 +446,17 @@ if st.button("Calcola rosa ideale"):
         pool_df = pool_df[~pool_df["player_code"].isin(locked_player_codes)]
 
         candidates = [
-            Candidate(player_code=int(r.player_code), role=r.role, var_mean=float(r.var_mean), cost=int(r.quotazione_asta))
+            Candidate(
+                player_code=int(r.player_code),
+                role=r.role,
+                var_mean=float(r.var_mean),
+                # Nessun candidato può costare meno della sua quotazione: minimo
+                # d'offerta di regolamento in G1/G2 (ADR-2026-013). Nessuna
+                # quotazione admin per-giocatore ancora importata (2026-08-16),
+                # quindi oggi coincide con quotazione_asta -- pronto per quando
+                # arriverà.
+                cost=candidate_price_floor(int(r.quotazione_asta), admin_quotazione=None),
+            )
             for r in pool_df.itertuples(index=False)
         ]
 
@@ -424,8 +467,9 @@ if st.button("Calcola rosa ideale"):
             slots_summary = ", ".join(f"{v} {ROLE_LABELS_SINGULAR.get(k, k).lower()}" for k, v in role_slots_needed.items() if v > 0)
             st.markdown(
                 f"Budget considerato: **{round_budget}** residuo"
-                f"{f' − {locked_cost_this_round} già impegnato dagli obiettivi bloccati' if locked_cost_this_round else ''} "
-                f"= **{available_budget}** disponibile. Slot cercati: {slots_summary}."
+                f"{f' − {locked_cost_this_round} già impegnato dai prezzi pianificati degli obiettivi bloccati' if locked_cost_this_round else ''} "
+                f"= **{available_budget}** disponibile. Slot cercati: {slots_summary}. "
+                "I candidati proposti sotto costano almeno la loro quotazione (minimo d'offerta di regolamento)."
             )
             if result.candidate_pool_capped:
                 st.caption(

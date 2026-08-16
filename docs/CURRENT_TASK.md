@@ -2,8 +2,8 @@
 
 Compilare prima di ogni modifica significativa e mantenere lo scope a una singola unità verificabile.
 
-- Obiettivo: correggere il turno (`round_pool`) mostrato in app perché seguisse sempre la lista admin ufficiale invece del ranking VAR del modello, per ogni giocatore coperto dalla lista (ADR-2026-052). Segnalato dall'utente su un caso reale (Marcandalli, Lista 4 = G1 secondo la lista, ma l'app mostrava un turno diverso).
-- Stato: **completo e verificato**. `hard_override_round_pool_from_admin_rank()` (nuovo, in `src/fantacalcio/auction/round_pools.py`) sovrascrive `round_pool`/`list_pool_name` con il turno della lista admin per ogni riga con `admin_rank` entro il cutoff di ruolo; usata sia in `apply_official_admin_list.py` sia in `scripts/add_new_signings.py`. Trovato e corretto anche un bug di ordine-pipeline che azzerava l'`admin_rank` dei 4 nuovi acquisti. Rieseguita la pipeline da zero (`apply_admin_official_list.py` → `add_new_signings.py` → rebuild DuckDB); verifica completa: 219/219 giocatori ufficiali con turno coerente col cutoff di ruolo, 4 lock reali (team_01) invariati e coerenti, 373 test passano.
+- Obiettivo: controfattuale "cosa posso prendere per il resto della rosa" dato quanto l'utente pensa di pagare i suoi lock — nuovo campo `planned_price` sui lock + wiring nella "Rosa ideale" già esistente, con il vincolo che i candidati non bloccati non possano mai costare meno della loro quotazione (ADR-2026-053).
+- Stato: **completo e verificato**. `planned_price` (nullable, migrazione additiva) in `locks_store.py`; `candidate_price_floor()` in `roster_optimizer.py`; `app/pages/3_⭐_Rosa.py` aggiornata (form di lock con campo prezzo, tabella lock, calcolo budget "Rosa ideale"). 6 nuovi test, 379 totali passano. Verificato in browser sul DB reale: migrazione automatica sui lock pre-esistenti, form funzionante, ottimizzatore senza errori.
 - Prossima azione: nessuna bloccante.
 
 ---

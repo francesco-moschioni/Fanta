@@ -51,3 +51,39 @@ class TestLocksStore:
         conn1.close()
         conn2 = connect(db_path)
         assert len(list_locks(conn2, "team_01")) == 1
+
+    def test_planned_price_defaults_to_none(self, tmp_path):
+        conn = connect(tmp_path / "db.sqlite3")
+        add_lock(conn, "team_01", 123, "A")
+        assert list_locks(conn, "team_01")[0].planned_price is None
+
+    def test_planned_price_stored_and_updatable(self, tmp_path):
+        conn = connect(tmp_path / "db.sqlite3")
+        add_lock(conn, "team_01", 123, "A", planned_price=45)
+        assert list_locks(conn, "team_01")[0].planned_price == 45
+        add_lock(conn, "team_01", 123, "A", planned_price=60)
+        assert list_locks(conn, "team_01")[0].planned_price == 60
+
+    def test_planned_price_column_migrates_onto_pre_existing_db(self, tmp_path):
+        # Simulate a database created before planned_price existed: create the
+        # table with the old schema directly, then connect() must add the
+        # column without losing existing rows.
+        import sqlite3
+
+        db_path = tmp_path / "db.sqlite3"
+        raw = sqlite3.connect(str(db_path))
+        raw.execute(
+            "CREATE TABLE locks (team_id TEXT, player_code INTEGER, role TEXT, "
+            "note TEXT DEFAULT '', locked_at TEXT, PRIMARY KEY (team_id, player_code))"
+        )
+        raw.execute(
+            "INSERT INTO locks (team_id, player_code, role, note, locked_at) VALUES (?, ?, ?, ?, ?)",
+            ("team_01", 123, "A", "", "2026-01-01T00:00:00Z"),
+        )
+        raw.commit()
+        raw.close()
+
+        conn = connect(db_path)
+        locks = list_locks(conn, "team_01")
+        assert len(locks) == 1
+        assert locks[0].planned_price is None

@@ -32,6 +32,14 @@ CREATE TABLE IF NOT EXISTS locks (
 );
 """
 
+# planned_price: what the user says they would pay for this lock, distinct
+# from any quotazione -- it is the user's own hypothetical, not a floor or a
+# model output (docs/CURRENT_TASK.md, controfattuale "rosa ideale" con lock
+# prezzati). Added via ALTER TABLE for existing databases created before this
+# column existed; NULL for locks saved before this change, never backfilled
+# with a guess.
+_MIGRATION_ADD_PLANNED_PRICE = "ALTER TABLE locks ADD COLUMN planned_price INTEGER"
+
 
 @dataclass(frozen=True)
 class LockedPlayer:
@@ -40,21 +48,34 @@ class LockedPlayer:
     role: str
     note: str
     locked_at: str
+    planned_price: int | None = None
 
 
 def connect(db_path: Path = DEFAULT_DB_PATH) -> sqlite3.Connection:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(db_path), check_same_thread=False)
     conn.execute(_SCHEMA)
+    try:
+        conn.execute(_MIGRATION_ADD_PLANNED_PRICE)
+    except sqlite3.OperationalError:
+        pass  # column already exists
     conn.commit()
     return conn
 
 
-def add_lock(conn: sqlite3.Connection, team_id: str, player_code: int, role: str, note: str = "") -> None:
+def add_lock(
+    conn: sqlite3.Connection,
+    team_id: str,
+    player_code: int,
+    role: str,
+    note: str = "",
+    planned_price: int | None = None,
+) -> None:
     locked_at = datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
     conn.execute(
-        "INSERT OR REPLACE INTO locks (team_id, player_code, role, note, locked_at) VALUES (?, ?, ?, ?, ?)",
-        (team_id, player_code, role, note, locked_at),
+        "INSERT OR REPLACE INTO locks (team_id, player_code, role, note, locked_at, planned_price) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (team_id, player_code, role, note, locked_at, planned_price),
     )
     conn.commit()
 
@@ -67,12 +88,13 @@ def remove_lock(conn: sqlite3.Connection, team_id: str, player_code: int) -> Non
 def list_locks(conn: sqlite3.Connection, team_id: str | None = None) -> list[LockedPlayer]:
     if team_id is not None:
         rows = conn.execute(
-            "SELECT team_id, player_code, role, note, locked_at FROM locks WHERE team_id = ? ORDER BY locked_at",
+            "SELECT team_id, player_code, role, note, locked_at, planned_price FROM locks "
+            "WHERE team_id = ? ORDER BY locked_at",
             (team_id,),
         ).fetchall()
     else:
         rows = conn.execute(
-            "SELECT team_id, player_code, role, note, locked_at FROM locks ORDER BY locked_at"
+            "SELECT team_id, player_code, role, note, locked_at, planned_price FROM locks ORDER BY locked_at"
         ).fetchall()
     return [LockedPlayer(*row) for row in rows]
 
