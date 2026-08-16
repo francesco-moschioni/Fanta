@@ -10,7 +10,13 @@ import streamlit as st
 from fantacalcio.auction.market_supply import compute_goalkeeper_club_supply, compute_role_supply
 from fantacalcio.config import load_ruleset
 from fantacalcio.persistence.player_table import DEFAULT_DB_PATH, connect, get_build_meta, search_players
-from fantacalcio.persistence.team_labels_store import connect as connect_labels, get_label, set_label
+from fantacalcio.persistence.team_labels_store import (
+    connect as connect_labels,
+    get_label,
+    load_labels_config,
+    seed_missing_labels,
+    set_label,
+)
 
 st.set_page_config(page_title="Fantacalcio — Home", page_icon="🏠", layout="wide")
 
@@ -99,6 +105,7 @@ def _labels_conn():
 
 ruleset = _ruleset()
 labels_conn = _labels_conn()
+seed_missing_labels(labels_conn, load_labels_config())
 TEAM_IDS = [f"team_{i:02d}" for i in range(1, ruleset.teams + 1)]
 
 if "my_team_id" not in st.session_state:

@@ -34,7 +34,13 @@ from fantacalcio.persistence.ledger_store import (
     load_events,
 )
 from fantacalcio.persistence.player_table import DEFAULT_DB_PATH, connect as connect_players, get_player, search_players
-from fantacalcio.persistence.team_labels_store import connect as connect_labels, display_name, get_all_labels
+from fantacalcio.persistence.team_labels_store import (
+    connect as connect_labels,
+    display_name,
+    get_all_labels,
+    load_labels_config,
+    seed_missing_labels,
+)
 
 st.set_page_config(page_title="Fantacalcio — Squadre", page_icon="📋", layout="wide")
 st.title("Squadre")
@@ -89,6 +95,7 @@ ruleset = _ruleset()
 ledger_conn = _ledger_conn()
 player_conn = _player_conn()
 labels_conn = _labels_conn()
+seed_missing_labels(labels_conn, load_labels_config())
 team_labels = get_all_labels(labels_conn)
 
 TEAM_IDS = [f"team_{i:02d}" for i in range(1, ruleset.teams + 1)]

@@ -1,0 +1,24 @@
+# Nomi reali delle 20 squadre della lega, versionati (a differenza di
+# data/local/ledger.sqlite3, escluso da Git) cosi' sopravvivono a un
+# riavvio/redeploy su storage effimero (es. Streamlit Community Cloud,
+# ADR-2026-048/049). team_01 e' sempre la squadra dell'utente locale.
+team_01: Garlascow Rangers
+team_02: Lokomotiv Mosquera
+team_03: ROONEY TUNES
+team_04: Ebosele fc
+team_05: Werder Bremer
+team_06: Barneymouth
+team_07: Joga Benito
+team_08: Trono DI Spiaze
+team_09: Tettenham Eleven
+team_10: Gyasi
+team_11: Balkan Eagles
+team_12: "L’ARMATA DEI COGLIONI"
+team_13: AJAJAX BRAZORF
+team_14: Brigate Ebosse
+team_15: FC Etta Nera
+team_16: Mapi Group
+team_17: minchecuaddu
+team_18: Giallo-Verde Tampere
+team_19: FC HastaRevolucion
+team_20: Scooby-diouf

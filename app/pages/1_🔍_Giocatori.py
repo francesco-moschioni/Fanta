@@ -29,7 +29,13 @@ from fantacalcio.persistence.player_table import (
     get_build_meta,
     search_players,
 )
-from fantacalcio.persistence.team_labels_store import connect as connect_labels, display_name, get_all_labels
+from fantacalcio.persistence.team_labels_store import (
+    connect as connect_labels,
+    display_name,
+    get_all_labels,
+    load_labels_config,
+    seed_missing_labels,
+)
 from fantacalcio.scoring.monte_carlo import DEFAULT_PRIOR_GAMES, load_calibration_meta
 
 RULESET_PATH = Path("config/auction_rules.v1.yaml")
@@ -98,6 +104,7 @@ locks_conn = _get_locks_conn()
 avoid_conn = _get_avoid_conn()
 ledger_conn = _get_ledger_conn()
 labels_conn = _get_labels_conn()
+seed_missing_labels(labels_conn, load_labels_config())
 league_state = load_current_league_state(ledger_conn, ruleset)
 team_labels = get_all_labels(labels_conn)
 meta = get_build_meta(conn)
