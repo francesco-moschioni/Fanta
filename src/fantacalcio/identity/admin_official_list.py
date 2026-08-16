@@ -44,17 +44,36 @@ LIST_STATE_OFFICIAL = "official"
 # these are deliberately kept unresolved to any player_code.
 CONFIRMED_NEW_PLAYERS = frozenset(
     {
-        "Chalobah",
-        "Isaksen",
-        "Jimenez",
         "Molina N.",
         "Obrador",
-        "Rodriguez Je.",
         "Schmid",
         "Spence",
-        "Sucic",
     }
 )
+
+# These 5 were originally miscategorized as "new" by the automatic resolver,
+# but ARE already in the 2026/27 Quotazioni anchor -- verified manually
+# 2026-08-16 (ADR-2026-051) by cross-checking the anchor CSV directly plus
+# independent web sources confirming the same person/club. Two different
+# failure modes, both legitimate for the automatic resolver to have rejected:
+#   - Isaksen / Rodriguez Je.: the admin list classifies them as "A"
+#     (attaccante), the anchor Quotazioni classifies them as "C" (centrocampista,
+#     classic wide-role code) -- the resolver's same-role constraint correctly
+#     refuses to guess across a role disagreement between two independent
+#     sources; here it's resolved by a human-equivalent check, not loosened
+#     for every future case.
+#   - Sucic / Chalobah / Jimenez: same role on both sides, but the anchor name
+#     carries a disambiguating initial ("Sucic P.", "Chalobah T.", "Jimenez A.")
+#     that pushes the fuzzy ratio just under the 0.90 auto-accept threshold
+#     (0.8889 / 0.875) -- a near-miss, not a wrong guess.
+# (display_name in the admin list, role in the admin list) -> real player_code.
+MANUAL_VERIFIED_CROSSWALK: dict[tuple[str, str], int] = {
+    ("Isaksen", "A"): 6398,
+    ("Rodriguez Je.", "A"): 7129,
+    ("Sucic", "C"): 7070,
+    ("Chalobah", "D"): 5641,
+    ("Jimenez", "D"): 6531,
+}
 
 
 @dataclass(frozen=True)
@@ -90,7 +109,9 @@ def build_curated_admin_list(
         (e.matched_display_name, e.role): e.player_code for e in result.crosswalk
     }
     players["player_code"] = [
-        crosswalk_by_name_role.get((row.display_name, row.role)) for row in players.itertuples()
+        crosswalk_by_name_role.get((row.display_name, row.role))
+        or MANUAL_VERIFIED_CROSSWALK.get((row.display_name, row.role))
+        for row in players.itertuples()
     ]
 
     resolved_mask = players["player_code"].notna()
@@ -117,6 +138,7 @@ def build_curated_admin_list(
             }
             for e in result.review_queue
             if e.matched_display_name not in CONFIRMED_NEW_PLAYERS
+            and (e.matched_display_name, e.role) not in MANUAL_VERIFIED_CROSSWALK
         ]
     )
     if len(review_queue) != len(still_unreviewed):
