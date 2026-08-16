@@ -28,6 +28,7 @@ from fantacalcio.persistence.player_table import (
     distinct_values,
     get_build_meta,
     search_players,
+    search_players_fuzzy,
 )
 from fantacalcio.persistence.team_labels_store import (
     connect as connect_labels,
@@ -130,14 +131,24 @@ with st.sidebar:
         format_func=lambda t: TIER_LABELS.get(t, t),
     )
 
-results = search_players(
-    conn,
-    name_query=name_query or None,
+_filter_kwargs = dict(
     role=None if role == "Tutti" else role,
     team_name=None if team_name == "Tutte" else team_name,
     round_pool=None if round_pool == "Tutti" else round_pool,
     data_quality_tier=None if tier == "Tutti" else tier,
 )
+results = search_players(conn, name_query=name_query or None, **_filter_kwargs)
+
+fuzzy_fallback_used = False
+if results.empty and name_query:
+    results = search_players_fuzzy(conn, name_query, **_filter_kwargs)
+    fuzzy_fallback_used = not results.empty
+
+if fuzzy_fallback_used:
+    st.info(
+        f"Nessun giocatore corrisponde esattamente a \"{name_query}\" — probabile errore di "
+        "battitura. Ecco i nomi più simili trovati:"
+    )
 
 st.subheader(f"{len(results)} giocatori")
 

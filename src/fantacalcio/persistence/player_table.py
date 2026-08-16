@@ -11,6 +11,7 @@ displays what the domain layer already computed, it never recomputes it.
 
 from __future__ import annotations
 
+import difflib
 import hashlib
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -18,6 +19,8 @@ from pathlib import Path
 
 import duckdb
 import pandas as pd
+
+from fantacalcio.identity.teams import normalize_name
 
 SOURCE_CSV = Path("data/staged/fantacalcio_voti_manual/_m3_replacement_values.csv")
 DEFAULT_DB_PATH = Path("data/local/fantacalcio.duckdb")
@@ -154,6 +157,41 @@ def search_players(
     where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
     query = f"SELECT * FROM players {where} ORDER BY var_mean DESC"
     return conn.execute(query, params).df()
+
+
+FUZZY_SEARCH_THRESHOLD = 0.6
+
+
+def search_players_fuzzy(
+    conn: duckdb.DuckDBPyConnection,
+    name_query: str,
+    role: str | None = None,
+    team_name: str | None = None,
+    round_pool: str | None = None,
+    data_quality_tier: str | None = None,
+    limit: int = 15,
+) -> pd.DataFrame:
+    """Fallback for when `search_players`'s exact substring match finds nothing
+    -- e.g. a typo like "Dobvyk" for "Dovbyk". Ranks every candidate (within the
+    other filters, same as `search_players`) by fuzzy similarity to `name_query`
+    and returns the best matches above `FUZZY_SEARCH_THRESHOLD`, most similar
+    first. Never silently invents a match: below the threshold, a name is left
+    out rather than force-included, same principle as the admin-list name
+    resolver (`fantacalcio.identity.player_name_resolver`)."""
+    candidates = search_players(
+        conn, role=role, team_name=team_name, round_pool=round_pool, data_quality_tier=data_quality_tier
+    )
+    if candidates.empty:
+        return candidates
+
+    query_norm = normalize_name(name_query)
+    candidates = candidates.copy()
+    candidates["_fuzzy_ratio"] = candidates["display_name"].map(
+        lambda n: difflib.SequenceMatcher(None, query_norm, normalize_name(n)).ratio()
+    )
+    matches = candidates[candidates["_fuzzy_ratio"] >= FUZZY_SEARCH_THRESHOLD]
+    matches = matches.sort_values("_fuzzy_ratio", ascending=False).head(limit)
+    return matches.drop(columns="_fuzzy_ratio")
 
 
 def get_player(conn: duckdb.DuckDBPyConnection, player_code: int) -> pd.Series | None:

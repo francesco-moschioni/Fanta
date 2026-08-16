@@ -11,6 +11,7 @@ from fantacalcio.persistence.player_table import (
     get_build_meta,
     get_player,
     search_players,
+    search_players_fuzzy,
 )
 
 
@@ -112,3 +113,44 @@ class TestSearchAndQuery:
         conn = self._built_conn(tmp_path)
         with pytest.raises(ValueError, match="not a filterable column"):
             distinct_values(conn, "nonexistent; DROP TABLE players")
+
+
+class TestSearchPlayersFuzzy:
+    def _built_conn(self, tmp_path):
+        csv_path = tmp_path / "source.csv"
+        _write_source_csv(
+            csv_path,
+            [
+                _row(1, display_name="Dovbyk", role="A", team_name="Roma", round_pool="G2"),
+                _row(2, display_name="Leao", role="A", team_name="Milan", round_pool="G2"),
+                _row(3, display_name="Rookie X", role="D", team_name="Como", round_pool="G3_G4"),
+            ],
+        )
+        db_path = tmp_path / "db.duckdb"
+        build_player_table(source_csv=csv_path, db_path=db_path)
+        return connect(db_path)
+
+    def test_finds_close_typo(self, tmp_path):
+        conn = self._built_conn(tmp_path)
+        result = search_players_fuzzy(conn, "Dobvyk")
+        assert "Dovbyk" in list(result["display_name"])
+
+    def test_ranked_by_similarity_descending(self, tmp_path):
+        conn = self._built_conn(tmp_path)
+        result = search_players_fuzzy(conn, "Dovbyk")
+        assert result.iloc[0]["display_name"] == "Dovbyk"
+
+    def test_completely_unrelated_query_returns_nothing(self, tmp_path):
+        conn = self._built_conn(tmp_path)
+        result = search_players_fuzzy(conn, "zzzzxxxqqqq")
+        assert result.empty
+
+    def test_respects_other_filters(self, tmp_path):
+        conn = self._built_conn(tmp_path)
+        result = search_players_fuzzy(conn, "Dobvyk", role="D")
+        assert result.empty
+
+    def test_no_helper_column_leaked_in_output(self, tmp_path):
+        conn = self._built_conn(tmp_path)
+        result = search_players_fuzzy(conn, "Dobvyk")
+        assert "_fuzzy_ratio" not in result.columns
