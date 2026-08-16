@@ -12,52 +12,73 @@ from fantacalcio.config import load_ruleset
 from fantacalcio.persistence.player_table import DEFAULT_DB_PATH, connect, get_build_meta, search_players
 from fantacalcio.persistence.team_labels_store import connect as connect_labels, get_label, set_label
 
-st.set_page_config(page_title="Fantacalcio — Home", layout="wide")
+st.set_page_config(page_title="Fantacalcio — Home", page_icon="🏠", layout="wide")
 
 RULESET_PATH = Path("config/auction_rules.v1.yaml")
 
-st.title("Assistente per l'asta del Fantacalcio")
-st.caption("Strumento privato, solo per te. Nessun dato esce da questo computer.")
+st.title("🏠 Assistente per l'asta del Fantacalcio")
+st.caption("🔒 Strumento privato, solo per te. Nessun dato esce da questo computer.")
 
-st.markdown(
-    """
-Questo strumento **non decide al posto tuo**. Ti mostra numeri calcolati in modo
-trasparente (ogni numero ha una spiegazione, visibile passandoci sopra il mouse
-o aprendo il pannello "come si calcola"), e ti aiuta a tenere traccia di budget,
-rosa e obiettivi mentre l'asta procede — così non devi ricordarti tutto a mente
-o su un foglio a parte.
+st.info(
+    "Questo strumento **non decide al posto tuo**. Ti mostra numeri spiegati in modo "
+    "semplice (passa il mouse sopra un numero, o apri \"come si calcola\"), e tiene "
+    "traccia di budget, rosa e obiettivi mentre l'asta procede — così non devi "
+    "ricordarti tutto a mente o su un foglio a parte."
+)
 
-## Le tre pagine, in breve
+st.subheader("Le tre pagine, in breve")
+col_a, col_b, col_c = st.columns(3)
+with col_a:
+    with st.container(border=True):
+        st.markdown("### 🔍 Giocatori")
+        st.markdown(
+            "Cerca un giocatore, guarda quanto ci si aspetta che renda e quanto "
+            "vale. Da qui lo segni come tuo **obiettivo**, o come uno **da evitare**."
+        )
+with col_b:
+    with st.container(border=True):
+        st.markdown("### 📋 Squadre")
+        st.markdown(
+            "Quando l'admin pubblica i risultati di un turno (chi ha vinto quale "
+            "giocatore, a che prezzo), registrali qui: budget e rose si aggiornano da soli."
+        )
+with col_c:
+    with st.container(border=True):
+        st.markdown("### ⭐ Rosa")
+        st.markdown(
+            "La tua situazione: cosa hai già vinto, quali obiettivi hai bloccato, "
+            "e un suggerimento automatico su come completare quello che ti manca."
+        )
 
-- **Giocatori** — cerca un giocatore, guarda quanto ci si aspetta che renda e
-  quanto vale rispetto agli altri del suo ruolo. Da qui puoi anche segnarlo
-  come tuo obiettivo, o come uno da evitare.
-- **Squadre** — quando l'admin pubblica i risultati di un turno (chi ha vinto
-  quale giocatore, a che prezzo), registrali qui. Tiene aggiornati in tempo
-  reale budget e rosa di tutte le squadre.
-- **Rosa** — la tua situazione: cosa hai già vinto per davvero, quali obiettivi
-  hai bloccato, e un calcolo automatico di quale combinazione di giocatori
-  conviene di più per completare quello che ti manca.
+st.subheader("Come usarlo, passo per passo")
+step1, step2, step3 = st.columns(3)
+with step1:
+    st.markdown("#### 1️⃣ Prima dell'asta")
+    st.markdown(
+        "Vai su **🔍 Giocatori**, guardati intorno, blocca i tuoi obiettivi "
+        "principali col bottone *\"Blocca come obiettivo\"*."
+    )
+with step2:
+    st.markdown("#### 2️⃣ Durante l'asta")
+    st.markdown(
+        "Appena l'admin pubblica i risultati di un turno, registrali su "
+        "**📋 Squadre** — un evento per ogni giocatore assegnato."
+    )
+with step3:
+    st.markdown("#### 3️⃣ Tra un turno e l'altro")
+    st.markdown(
+        "Apri **⭐ Rosa** per vedere cosa ti manca, quanto budget hai per il "
+        "turno dopo, e come conviene completarla."
+    )
 
-## Come usarlo, in pratica
-
-1. **Prima dell'asta**: vai su *Giocatori*, guardati intorno, blocca i tuoi
-   obiettivi principali (bottone "Blocca come obiettivo" nella scheda di ogni
-   giocatore).
-2. **Durante l'asta**: appena l'admin pubblica i risultati di un turno,
-   registrali su *Squadre* — un evento per ogni giocatore assegnato (o il
-   blocco portieri, che si registra insieme).
-3. **Tra un turno e l'altro**: apri *Rosa* per vedere cosa ti manca, quanto
-   budget hai per il turno dopo, e se vuoi un suggerimento su come completarla.
-
-**Importante**: i turni dell'asta sono a **busta chiusa**, decisi dall'admin
-dopo la chiusura di ciascuno — questo strumento non è un'asta dal vivo dentro
-l'app, registra e pianifica, non fa offerte per te.
-"""
+st.warning(
+    "⚠️ **Importante**: i turni dell'asta sono a **busta chiusa**, decisi "
+    "dall'admin dopo la chiusura di ciascuno — questo strumento non è un'asta "
+    "dal vivo dentro l'app, registra e pianifica, non fa offerte per te."
 )
 
 st.divider()
-st.subheader("La tua squadra")
+st.subheader("👤 La tua squadra")
 st.caption(
     "L'asta usa identificativi generici (`team_01`, `team_02`, ...) perché non ci "
     "sono ancora nomi reali delle squadre in questo strumento. Puoi darle un nome "
@@ -97,7 +118,7 @@ if rename_submitted:
         st.warning("Nome vuoto, non salvato.")
 
 st.divider()
-st.subheader("Stato dei dati")
+st.subheader("📊 Stato dei dati")
 
 if not DEFAULT_DB_PATH.is_file():
     st.error(
@@ -117,34 +138,46 @@ def _get_connection():
 conn = _get_connection()
 meta = get_build_meta(conn)
 
-col1, col2, col3, col4 = st.columns(4)
-col1.metric("Giocatori nella tabella", meta.get("n_players", "?"), help="Quanti giocatori del listone 2026/27 hanno una previsione calcolata.")
-col2.metric(
-    "Calcolo generato il (UTC)",
-    meta.get("source_generated_at", "?")[:19],
-    help="Quando è stato effettivamente calcolato il file con le previsioni "
-    "(simulazione Monte Carlo + valori di rimpiazzo) — la data che conta per "
-    "capire quanto sono \"freschi\" i numeri che vedi.",
-)
-col3.metric(
-    "Caricato in questa app il (UTC)",
-    meta.get("built_at", "?")[:19],
-    help="Quando questo strumento ha letto l'ultima volta il file di calcolo per "
-    "mostrartelo — può essere più recente del calcolo stesso se il file non è "
-    "cambiato nel frattempo.",
-)
-col4.metric("Fonte", "M3 replacement values", help="Il file da cui provengono i numeri: fantavoto atteso, VAR, tier di qualità dati.")
+st.metric("Giocatori nella tabella", meta.get("n_players", "?"), help="Quanti giocatori del listone 2026/27 hanno una previsione calcolata.")
 
-st.caption(f"File sorgente: `{meta.get('source_path', '?')}` (hash `{meta.get('source_sha256', '?')[:12]}`)")
+with st.expander("Dettagli tecnici (non necessari per usare l'app)"):
+    col1, col2, col3 = st.columns(3)
+    col1.metric(
+        "Calcolo generato il (UTC)",
+        meta.get("source_generated_at", "?")[:19],
+        help="Quando è stato effettivamente calcolato il file con le previsioni "
+        "(simulazione Monte Carlo + valori di rimpiazzo) — la data che conta per "
+        "capire quanto sono \"freschi\" i numeri che vedi.",
+    )
+    col2.metric(
+        "Caricato in questa app il (UTC)",
+        meta.get("built_at", "?")[:19],
+        help="Quando questo strumento ha letto l'ultima volta il file di calcolo per "
+        "mostrartelo — può essere più recente del calcolo stesso se il file non è "
+        "cambiato nel frattempo.",
+    )
+    col3.metric("Fonte", "M3 replacement values", help="Il file da cui provengono i numeri: fantavoto atteso, VAR, tier di qualità dati.")
+    st.caption(f"File sorgente: `{meta.get('source_path', '?')}` (hash `{meta.get('source_sha256', '?')[:12]}`)")
 
-st.warning(
-    "Il ranking dei giocatori per turno (G1-G4) è **provvisorio**, prodotto da questo "
-    "strumento — non è ancora la lista ufficiale dell'admin (arriva via Google Form). "
-    "Fidati per farti un'idea, ma verifica sulla lista reale quando arriva."
-)
+_official_count = conn.execute("SELECT count(*) FROM players WHERE list_state = 'official'").fetchone()[0]
+_total_count = int(meta.get("n_players", 0) or 0)
+if _official_count:
+    st.info(
+        f"**{_official_count} giocatori su {_total_count}** hanno la quotazione **ufficiale** "
+        "dell'admin (Lista 2026/27), non solo la stima di questo strumento — trovi rank e "
+        "punteggio ufficiale nella scheda del giocatore. Gli altri (nuovi arrivi non ancora "
+        "in lista, o ruoli/quotazioni non coperti dal file admin) restano **provvisori**, "
+        "prodotti solo dal modello di questo strumento."
+    )
+else:
+    st.warning(
+        "Il ranking dei giocatori per turno (G1-G4) è **provvisorio**, prodotto da questo "
+        "strumento — non è ancora la lista ufficiale dell'admin. "
+        "Fidati per farti un'idea, ma verifica sulla lista reale quando arriva."
+    )
 
 st.divider()
-st.subheader("Avvisi di mercato")
+st.subheader("📢 Avvisi di mercato")
 st.caption(
     "Quanti giocatori esistono davvero nel listone 2026/27 per ciascun ruolo, "
     "confrontati con quanti ne servirebbero in tutto per riempire le rose di "

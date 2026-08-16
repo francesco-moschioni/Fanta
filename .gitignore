@@ -9,7 +9,15 @@ data/raw/
 data/staged/
 data/curated/
 data/private/
-data/local/
+# data/local/ escluso file-per-file (non con una regola sulla cartella intera)
+# perché git non permette di "riammettere" un file dentro una cartella già
+# esclusa in blocco -- l'eccezione sotto non funzionerebbe altrimenti.
+data/local/*
+# Eccezione: solo la tabella giocatori calcolata (fantavoto/VAR derivati, non i
+# file grezzi con licenza "uso personale") -- per il deploy privato su Streamlit
+# Cloud (ADR-2026-048). Ledger/lock/etichette squadra restano SEMPRE esclusi:
+# sono stato live dell'asta reale, non dati da pubblicare nemmeno in un repo privato.
+!data/local/fantacalcio.duckdb
 private_participants/
 
 # Generated artifacts

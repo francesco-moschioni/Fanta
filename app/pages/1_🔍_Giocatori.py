@@ -47,7 +47,7 @@ ROUND_POOL_LABELS = {
     "G3_G4": "3°/4° turno (chiunque sia rimasto)",
 }
 
-st.set_page_config(page_title="Fantacalcio — Giocatori", layout="wide")
+st.set_page_config(page_title="Fantacalcio — Giocatori", page_icon="🔍", layout="wide")
 st.title("Giocatori")
 st.markdown(
     "Cerca un giocatore, guarda quanto ci si aspetta che renda e quanto vale "
@@ -102,8 +102,9 @@ league_state = load_current_league_state(ledger_conn, ruleset)
 team_labels = get_all_labels(labels_conn)
 meta = get_build_meta(conn)
 st.caption(
-    f"Dati costruiti il {meta.get('built_at', '?')[:19]} UTC — lista **provvisoria** "
-    "del modello, non quella ufficiale dell'admin (vedi pagina Home per i dettagli)."
+    f"Dati costruiti il {meta.get('built_at', '?')[:19]} UTC — alcuni giocatori hanno la "
+    "quotazione **ufficiale** dell'admin, altri restano **provvisori** (solo stima del "
+    "modello): guarda `Turno d'asta` nella scheda del giocatore (vedi pagina Home per i dettagli)."
 )
 
 with st.sidebar:
@@ -267,9 +268,12 @@ with st.expander("Come si calcola questo numero? (VAR e fantavoto atteso)"):
             "rispetto a un ruolo senza carenza (vedi \"Avvisi di mercato\" in Home)."
         )
 
+_list_state_note = (
+    "ufficiale dell'admin" if player["list_state"] == "official" else "provvisoria del modello"
+)
 st.markdown(
     f"**Turno d'asta**: {ROUND_POOL_LABELS.get(player['round_pool'], player['round_pool'])} "
-    f"— lista `{player['list_state']}` (provvisoria del modello)"
+    f"— lista `{player['list_state']}` ({_list_state_note})"
 )
 st.markdown(f"**Qualità dati**: {TIER_LABELS.get(player['data_quality_tier'], player['data_quality_tier'])}")
 st.markdown(f"**Partite nello storico usate dal modello**: {int(player['player_games_in_pool'])}")

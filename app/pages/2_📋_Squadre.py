@@ -36,7 +36,7 @@ from fantacalcio.persistence.ledger_store import (
 from fantacalcio.persistence.player_table import DEFAULT_DB_PATH, connect as connect_players, get_player, search_players
 from fantacalcio.persistence.team_labels_store import connect as connect_labels, display_name, get_all_labels
 
-st.set_page_config(page_title="Fantacalcio — Squadre", layout="wide")
+st.set_page_config(page_title="Fantacalcio — Squadre", page_icon="📋", layout="wide")
 st.title("Squadre")
 st.markdown(
     "Quando l'admin pubblica i risultati di un turno (chi ha vinto quale "

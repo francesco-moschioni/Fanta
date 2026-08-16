@@ -28,7 +28,7 @@ from fantacalcio.persistence.locks_store import add_lock, connect as connect_loc
 from fantacalcio.persistence.player_table import DEFAULT_DB_PATH, connect as connect_players, get_player, search_players
 from fantacalcio.persistence.team_labels_store import connect as connect_labels, display_name, get_all_labels
 
-st.set_page_config(page_title="Fantacalcio — Rosa", layout="wide")
+st.set_page_config(page_title="Fantacalcio — Rosa", page_icon="⭐", layout="wide")
 st.title("La mia rosa")
 st.markdown(
     "La tua situazione in un colpo d'occhio: cosa hai **già vinto per davvero** "

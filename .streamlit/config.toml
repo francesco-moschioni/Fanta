@@ -1,0 +1,17 @@
+# UI leggibilità per un utente non tecnico (docs/CURRENT_TASK.md).
+# toolbarMode="minimal" nasconde i pulsanti "Deploy"/GitHub/menu sviluppatore
+# che non hanno alcun senso per chi usa solo l'app in locale e potrebbero
+# confondere o essere premuti per errore.
+
+[client]
+toolbarMode = "minimal"
+showErrorDetails = "type"
+
+[theme]
+base = "light"
+primaryColor = "#1a7f37"
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#f0f2f6"
+textColor = "#1a1a1a"
+font = "sans serif"
+baseRadius = "medium"
