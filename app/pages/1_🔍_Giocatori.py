@@ -26,6 +26,7 @@ from fantacalcio.persistence.player_table import (
     DEFAULT_DB_PATH,
     connect,
     distinct_values,
+    effective_quotazione,
     get_build_meta,
     search_players,
     search_players_fuzzy,
@@ -152,11 +153,14 @@ if fuzzy_fallback_used:
 
 st.subheader(f"{len(results)} giocatori")
 
+results = results.copy()
+results["quotazione_effettiva"] = results.apply(effective_quotazione, axis=1)
+
 display_cols = {
     "display_name": "Nome",
     "role": "Ruolo",
     "team_name": "Squadra",
-    "quotazione_asta": "Quotazione",
+    "quotazione_effettiva": "Quotazione",
     "sim_mean": "Fantavoto atteso",
     "var_mean": "VAR",
     "round_pool": "Turno",
@@ -171,6 +175,10 @@ st.dataframe(
     width="stretch",
     hide_index=True,
     column_config={
+        "Quotazione": st.column_config.NumberColumn(
+            help="Punteggio della lista admin ufficiale, quando il giocatore ce l'ha (lista 'ufficiale'); "
+            "altrimenti quotazione del listone fantacalcio 2026/27."
+        ),
         "Fantavoto atteso": st.column_config.NumberColumn(
             help="Media delle simulazioni Monte Carlo (bootstrap sulla storia reale del giocatore/ruolo). Dettagli nella scheda sotto."
         ),
@@ -229,7 +237,19 @@ col5.metric(
     f"{player['var_p10']:.2f} – {player['var_p90']:.2f}",
     help="P10/P90 del giocatore meno il livello di replacement medio del ruolo (non una convoluzione completa delle due distribuzioni).",
 )
-col6.metric("Quotazione asta", f"{player['quotazione_asta']}", help="Quotazione dal listone ufficiale 2026/27 (non calcolata dal modello).")
+_quotazione = effective_quotazione(player)
+if pd.notna(player.get("admin_score")):
+    col6.metric(
+        "Quotazione",
+        f"{_quotazione}",
+        help="Punteggio dalla lista admin ufficiale (sostituisce la quotazione del listone fantacalcio per i giocatori 'ufficiali').",
+    )
+else:
+    col6.metric(
+        "Quotazione",
+        f"{_quotazione}",
+        help="Quotazione dal listone fantacalcio 2026/27 (non calcolata dal modello). Nessuna lista admin ufficiale per questo giocatore.",
+    )
 
 with st.expander("Come si calcola questo numero? (VAR e fantavoto atteso)"):
     n_own = int(player["player_games_in_pool"])

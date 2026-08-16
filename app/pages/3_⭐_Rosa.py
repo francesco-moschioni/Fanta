@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pandas as pd
 import streamlit as st
 
 from fantacalcio.auction.bid_recommendation import budget_remaining_for_round
@@ -30,7 +31,13 @@ from fantacalcio.domain import Role
 from fantacalcio.persistence.avoid_list_store import add_avoid, connect as connect_avoid, list_avoided, remove_avoid
 from fantacalcio.persistence.ledger_store import connect as connect_ledger, load_current_league_state
 from fantacalcio.persistence.locks_store import add_lock, connect as connect_locks, list_locks, remove_lock
-from fantacalcio.persistence.player_table import DEFAULT_DB_PATH, connect as connect_players, get_player, search_players
+from fantacalcio.persistence.player_table import (
+    DEFAULT_DB_PATH,
+    connect as connect_players,
+    effective_quotazione,
+    get_player,
+    search_players,
+)
 from fantacalcio.persistence.team_labels_store import (
     connect as connect_labels,
     display_name,
@@ -172,7 +179,7 @@ if my_locks:
     lock_rows = []
     for lock in my_locks:
         row = get_player(player_conn, lock.player_code)
-        quotazione = int(row["quotazione_asta"]) if row is not None else None
+        quotazione = effective_quotazione(row) if row is not None else None
         planned = lock.planned_price if lock.planned_price is not None else quotazione
         if planned is not None:
             total_planned_cost += planned
@@ -418,7 +425,7 @@ if st.button("Calcola rosa ideale"):
         if lock.planned_price is not None:
             lock_cost = lock.planned_price
         elif row is not None:
-            lock_cost = int(row["quotazione_asta"])
+            lock_cost = effective_quotazione(row)
         else:
             lock_cost = 0
         locked_role_cost[lock.role] = locked_role_cost.get(lock.role, 0) + lock_cost
@@ -451,11 +458,14 @@ if st.button("Calcola rosa ideale"):
                 role=r.role,
                 var_mean=float(r.var_mean),
                 # Nessun candidato può costare meno della sua quotazione: minimo
-                # d'offerta di regolamento in G1/G2 (ADR-2026-013). Nessuna
-                # quotazione admin per-giocatore ancora importata (2026-08-16),
-                # quindi oggi coincide con quotazione_asta -- pronto per quando
-                # arriverà.
-                cost=candidate_price_floor(int(r.quotazione_asta), admin_quotazione=None),
+                # d'offerta di regolamento in G1/G2 (ADR-2026-013). Per i
+                # giocatori "ufficiali" quella quotazione è il punteggio della
+                # lista admin (admin_score), non la quotazione fantacalcio --
+                # stessa fonte di verità usata da effective_quotazione().
+                cost=candidate_price_floor(
+                    int(r.quotazione_asta),
+                    admin_quotazione=int(r.admin_score) if pd.notna(getattr(r, "admin_score", None)) else None,
+                ),
             )
             for r in pool_df.itertuples(index=False)
         ]

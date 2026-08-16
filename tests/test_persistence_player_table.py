@@ -8,6 +8,7 @@ from fantacalcio.persistence.player_table import (
     build_player_table,
     connect,
     distinct_values,
+    effective_quotazione,
     get_build_meta,
     get_player,
     search_players,
@@ -113,6 +114,27 @@ class TestSearchAndQuery:
         conn = self._built_conn(tmp_path)
         with pytest.raises(ValueError, match="not a filterable column"):
             distinct_values(conn, "nonexistent; DROP TABLE players")
+
+
+class TestEffectiveQuotazione:
+    def test_falls_back_to_fantacalcio_quotazione_when_no_admin_score(self):
+        row = pd.Series({"quotazione_asta": 12, "admin_score": None})
+        assert effective_quotazione(row) == 12
+
+    def test_falls_back_when_admin_score_is_nan(self):
+        row = pd.Series({"quotazione_asta": 12, "admin_score": float("nan")})
+        assert effective_quotazione(row) == 12
+
+    def test_uses_admin_score_when_present_even_if_lower(self):
+        # The admin's own published score is the real-auction source of
+        # truth once a player is official -- it replaces, never averages
+        # with, the fantacalcio listone quotation.
+        row = pd.Series({"quotazione_asta": 32, "admin_score": 55})
+        assert effective_quotazione(row) == 55
+
+    def test_missing_admin_score_column_entirely_falls_back(self):
+        row = pd.Series({"quotazione_asta": 12})
+        assert effective_quotazione(row) == 12
 
 
 class TestSearchPlayersFuzzy:

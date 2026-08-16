@@ -15,7 +15,14 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
-from fantacalcio.persistence.player_table import DEFAULT_DB_PATH, connect, distinct_values, get_build_meta, search_players
+from fantacalcio.persistence.player_table import (
+    DEFAULT_DB_PATH,
+    connect,
+    distinct_values,
+    effective_quotazione,
+    get_build_meta,
+    search_players,
+)
 from fantacalcio.persistence.team_labels_store import (
     connect as connect_labels,
     load_labels_config,
@@ -103,11 +110,14 @@ st.subheader(f"{len(results)} giocatori in questa fase")
 
 has_admin_columns = "admin_rank" in results.columns
 
+results = results.copy()
+results["quotazione_effettiva"] = results.apply(effective_quotazione, axis=1)
+
 display_cols = {
     "display_name": "Nome",
     "role": "Ruolo",
     "team_name": "Squadra",
-    "quotazione_asta": "Quotazione",
+    "quotazione_effettiva": "Quotazione",
     "sim_mean": "Fantavoto atteso",
     "var_mean": "VAR",
     "list_state": "Lista",
@@ -115,7 +125,6 @@ display_cols = {
 }
 if has_admin_columns:
     display_cols["admin_rank"] = "Rank admin"
-    display_cols["admin_score"] = "Punteggio admin"
 
 table = results[list(display_cols.keys())].rename(columns=display_cols)
 table["Ruolo"] = table["Ruolo"].map(lambda r: ROLE_LABELS.get(r, r))
@@ -159,9 +168,12 @@ for col, (_, player) in zip(columns, selected_rows.iterrows()):
             st.caption(f"Mediana {player['sim_median']:.2f} · P10–P90 {player['sim_p10']:.2f} – {player['sim_p90']:.2f}")
             st.metric("VAR", f"{player['var_mean']:.2f}")
             st.caption(f"Range VAR {player['var_p10']:.2f} – {player['var_p90']:.2f}")
-            st.metric("Quotazione", int(player["quotazione_asta"]))
+            st.metric("Quotazione", effective_quotazione(player))
             if has_admin_columns and pd.notna(player.get("admin_rank")):
-                st.caption(f"Lista ufficiale: rank {int(player['admin_rank'])}, punteggio {player['admin_score']:.0f}")
+                st.caption(
+                    f"Lista ufficiale: rank {int(player['admin_rank'])} "
+                    "(quotazione sopra = punteggio della lista admin, non la quotazione fantacalcio)"
+                )
             st.caption(f"Qualità dati: {TIER_LABELS.get(player['data_quality_tier'], player['data_quality_tier'])}")
             st.caption(f"Turno: {ROUND_POOL_LABELS.get(player['round_pool'], player['round_pool'])}")
 

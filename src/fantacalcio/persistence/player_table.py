@@ -194,6 +194,24 @@ def search_players_fuzzy(
     return matches.drop(columns="_fuzzy_ratio")
 
 
+def effective_quotazione(row: pd.Series) -> int:
+    """The quotazione to actually use for a player: the admin's own per-player
+    `admin_score` (the number published in the admin's list, e.g. "1. Dimarco
+    55") when the player is `official`, otherwise the fantacalcio listone's
+    `quotazione_asta`. Once a player has an admin quotation, the fantacalcio
+    one is superseded, not shown alongside it (user instruction 2026-08-16,
+    ADR-2026-053 follow-up) -- the admin list is the real auction's source of
+    truth (CLAUDE.md: admin list and model ranking are separate objects, and
+    for `official` players the admin's own numbers win, same principle already
+    applied to `round_pool` in `round_pools.hard_override_round_pool_from_admin_rank`).
+    `admin_score` may be absent from older/narrower query results; both cases
+    (missing column, NaN value) fall back to `quotazione_asta`."""
+    admin_score = row.get("admin_score") if hasattr(row, "get") else None
+    if admin_score is not None and pd.notna(admin_score):
+        return int(admin_score)
+    return int(row["quotazione_asta"])
+
+
 def get_player(conn: duckdb.DuckDBPyConnection, player_code: int) -> pd.Series | None:
     result = conn.execute("SELECT * FROM players WHERE player_code = ?", [player_code]).df()
     if result.empty:

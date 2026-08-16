@@ -2,8 +2,8 @@
 
 Compilare prima di ogni modifica significativa e mantenere lo scope a una singola unità verificabile.
 
-- Obiettivo: controfattuale "cosa posso prendere per il resto della rosa" dato quanto l'utente pensa di pagare i suoi lock — nuovo campo `planned_price` sui lock + wiring nella "Rosa ideale" già esistente, con il vincolo che i candidati non bloccati non possano mai costare meno della loro quotazione (ADR-2026-053).
-- Stato: **completo e verificato**. `planned_price` (nullable, migrazione additiva) in `locks_store.py`; `candidate_price_floor()` in `roster_optimizer.py`; `app/pages/3_⭐_Rosa.py` aggiornata (form di lock con campo prezzo, tabella lock, calcolo budget "Rosa ideale"). 6 nuovi test, 379 totali passano. Verificato in browser sul DB reale: migrazione automatica sui lock pre-esistenti, form funzionante, ottimizzatore senza errori.
+- Obiettivo: controfattuale "cosa posso prendere per il resto della rosa" dato quanto l'utente pensa di pagare i suoi lock — nuovo campo `planned_price` sui lock + wiring nella "Rosa ideale" già esistente, con il vincolo che i candidati non bloccati non possano mai costare meno della loro quotazione (ADR-2026-053), poi corretto perché la quotazione admin per-giocatore (già importata come `admin_score` ma mai usata come prezzo) sostituisse ovunque quella fantacalcio invece di affiancarla (ADR-2026-054).
+- Stato: **completo e verificato**. `planned_price` (nullable, migrazione additiva) in `locks_store.py`; `candidate_price_floor()` in `roster_optimizer.py`; `effective_quotazione()` in `player_table.py` (admin_score quando presente, altrimenti quotazione_asta); applicata in `app/pages/1_🔍_Giocatori.py`, `4_⚖️_Confronto.py`, `3_⭐_Rosa.py`. 10 nuovi test, 383 totali passano. Verificato in browser sul DB reale: migrazione automatica sui lock pre-esistenti, form funzionante, ottimizzatore senza errori, Martinez L. mostra correttamente 74 (admin_score) invece di 35 (quotazione fantacalcio).
 - Prossima azione: nessuna bloccante.
 
 ---
