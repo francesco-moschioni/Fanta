@@ -27,7 +27,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from fantacalcio.auction.round_pools import assign_round_pools
+from fantacalcio.auction.round_pools import assign_round_pools, hard_override_round_pool_from_admin_rank
 from fantacalcio.config import load_ruleset
 
 CSV_PATH = Path("data/staged/fantacalcio_voti_manual/_m3_replacement_values.csv")
@@ -125,6 +125,13 @@ def main() -> None:
     # (they ARE in the real admin list, just without a stable player_code yet).
     combined["list_state"] = combined["player_code"].map(original_list_state).fillna(combined["list_state"])
     combined.loc[combined["player_code"].isin([r[0] for r in NEW_SIGNINGS]), "list_state"] = "official"
+
+    # Hard override (2026-08-16, same rule as apply_official_admin_list.py):
+    # every row that carries an admin_rank -- including these 4 new signings,
+    # which DO have one straight from the admin list even without a
+    # model-anchor player_code -- gets its round_pool from that rank, not from
+    # assign_round_pools' VAR-based guess above.
+    combined = hard_override_round_pool_from_admin_rank(combined, ruleset)
 
     combined = combined.sort_values("var_mean", ascending=False)
     combined.to_csv(CSV_PATH, index=False)

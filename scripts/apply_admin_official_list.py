@@ -14,18 +14,21 @@ from pathlib import Path
 import pandas as pd
 
 from fantacalcio.auction.apply_official_admin_list import apply_official_admin_list
+from fantacalcio.config import load_ruleset
 from fantacalcio.persistence.player_table import SOURCE_CSV, build_player_table
 
 CURATED_DIR = Path("data/curated/admin_list_2026_27")
+RULESET_PATH = Path("config/auction_rules.v1.yaml")
 
 
 def main() -> None:
     pool = pd.read_csv(SOURCE_CSV)
     resolved_players = pd.read_csv(CURATED_DIR / "resolved_players.csv")
     goalkeeper_blocks = pd.read_csv(CURATED_DIR / "goalkeeper_blocks.csv")
+    ruleset = load_ruleset(RULESET_PATH)
 
     before_official = int((pool["list_state"] == "official").sum())
-    merged = apply_official_admin_list(pool, resolved_players, goalkeeper_blocks)
+    merged = apply_official_admin_list(pool, resolved_players, goalkeeper_blocks, ruleset)
     after_official = int((merged["list_state"] == "official").sum())
 
     merged.to_csv(SOURCE_CSV, index=False)

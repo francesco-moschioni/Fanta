@@ -100,3 +100,39 @@ def assign_round_pools(player_pool: pd.DataFrame, ruleset: Ruleset, rank_col: st
 
     out["list_state"] = LIST_STATE_PROVISIONAL
     return out
+
+
+def hard_override_round_pool_from_admin_rank(
+    player_pool: pd.DataFrame, ruleset: Ruleset, admin_rank_col: str = "admin_rank"
+) -> pd.DataFrame:
+    """For every D/C/A row with a non-null `admin_rank_col` within its role's own
+    admin-list cutoff (60/60/40, read from config, never hardcoded), overwrites
+    `round_pool`/`list_pool_name` with the admin list's own bucket -- replacing
+    whatever `assign_round_pools`' model-VAR ranking had set there.
+
+    Hard override, per the user's explicit instruction (2026-08-16) and
+    `config/auction_rules.v1.yaml` (`official_pool_authority: admin_import`,
+    `model_ranking_is_official_pool: false`): admin data always wins for any
+    player it actually ranks, full stop -- not just a gap-filler. Rows without an
+    `admin_rank` (not covered by the admin list) are left exactly as they were.
+    Goalkeepers are out of scope here -- they're ranked as per-club blocks, not
+    individual `admin_rank`, handled separately wherever `admin_gk_block_score`
+    is set.
+
+    Shared by both `apply_official_admin_list` (existing players resolved via
+    `player_code`) and `scripts/add_new_signings.py` (brand-new signings that
+    carry their own `admin_rank` straight from the admin list but no
+    model-anchor `player_code` match) so the two paths can't silently disagree.
+    """
+    out = player_pool.copy()
+    role_round_pool = {
+        "D": ("G1", "defenders_top_1_60", _pool_cutoff(ruleset, "G1", "defenders_top_1_60")),
+        "C": ("G2", "midfielders_top_1_60", _pool_cutoff(ruleset, "G2", "midfielders_top_1_60")),
+        "A": ("G2", "forwards_top_1_40", _pool_cutoff(ruleset, "G2", "forwards_top_1_40")),
+    }
+    admin_rank = pd.to_numeric(out[admin_rank_col], errors="coerce")
+    for role, (round_id, pool_name, cutoff) in role_round_pool.items():
+        mask = (out["role"] == role) & admin_rank.notna() & (admin_rank <= cutoff)
+        out.loc[mask, "round_pool"] = round_id
+        out.loc[mask, "list_pool_name"] = pool_name
+    return out

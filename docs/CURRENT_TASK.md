@@ -2,6 +2,14 @@
 
 Compilare prima di ogni modifica significativa e mantenere lo scope a una singola unità verificabile.
 
+- Obiettivo: correggere il turno (`round_pool`) mostrato in app perché seguisse sempre la lista admin ufficiale invece del ranking VAR del modello, per ogni giocatore coperto dalla lista (ADR-2026-052). Segnalato dall'utente su un caso reale (Marcandalli, Lista 4 = G1 secondo la lista, ma l'app mostrava un turno diverso).
+- Stato: **completo e verificato**. `hard_override_round_pool_from_admin_rank()` (nuovo, in `src/fantacalcio/auction/round_pools.py`) sovrascrive `round_pool`/`list_pool_name` con il turno della lista admin per ogni riga con `admin_rank` entro il cutoff di ruolo; usata sia in `apply_official_admin_list.py` sia in `scripts/add_new_signings.py`. Trovato e corretto anche un bug di ordine-pipeline che azzerava l'`admin_rank` dei 4 nuovi acquisti. Rieseguita la pipeline da zero (`apply_admin_official_list.py` → `add_new_signings.py` → rebuild DuckDB); verifica completa: 219/219 giocatori ufficiali con turno coerente col cutoff di ruolo, 4 lock reali (team_01) invariati e coerenti, 373 test passano.
+- Prossima azione: nessuna bloccante.
+
+---
+
+## Task precedente (archiviata)
+
 - Obiettivo: import della lista admin ufficiale 2026/27, ricevuta dall'utente in un nuovo formato Markdown (`Liste Fantacalcio 26_27.md`), come oggetto `official` separato dal ranking modello, e app pronta per la prima fase d'asta (ADR-2026-044/045/046).
 - Stato: **completo e verificato in browser**. Pipeline curata (parser → risoluzione identità → integrazione separata) + overlay `official` sulla tabella giocatori dell'app + cross-check lock + simulazione asta completa, tutto fatto.
   - `src/fantacalcio/ingest/admin_list_markdown.py`, `src/fantacalcio/identity/player_name_resolver.py`, `src/fantacalcio/identity/admin_official_list.py`: pipeline curata, output in `data/curated/admin_list_2026_27/`. 151 giocatori risolti, 9 nuovi confermati senza `player_code`, 20/20 blocchi portiere per squadra.

@@ -17,32 +17,59 @@ quotation, not a per-player one (confirmed by the user), so it's merged onto
 `team_name` instead of `player_code`, into its own `admin_gk_block_score` column,
 never into the per-goalkeeper `admin_rank`/`admin_score` fields used by outfield
 players.
+
+Round assignment (`round_pool`/`list_pool_name`): `round_pools.assign_round_pools`
+computes a `provisional` G1/G2/G3_G4 split from the model's own VAR ranking, used
+only until the real admin list arrives (module docstring there). Per
+`config/auction_rules.v1.yaml` (`official_pool_authority: admin_import`,
+`model_ranking_is_official_pool: false`) and the user's explicit instruction
+(2026-08-16, this file's ADR trail): once a player is resolved against the admin
+list, the admin list's own bucket -- not the model's VAR cutoff -- decides
+`round_pool`. This is a hard override: for every `official` player this function
+OVERWRITES whatever `round_pool`/`list_pool_name` `assign_round_pools` had already
+set, it never merely fills gaps. The admin list is treated as "closed": every
+player it resolves has a definitive round; every player outside it stays exactly
+as `assign_round_pools` left it (provisional G3_G4 in practice, i.e. "turno
+libero").
 """
 
 from __future__ import annotations
 
 import pandas as pd
 
+from ..config import Ruleset
+from .round_pools import POOL_GOALKEEPER_BLOCKS, hard_override_round_pool_from_admin_rank
+
 
 def apply_official_admin_list(
     player_pool: pd.DataFrame,
     resolved_players: pd.DataFrame,
     goalkeeper_blocks: pd.DataFrame,
+    ruleset: Ruleset,
 ) -> pd.DataFrame:
-    """`player_pool` needs `player_code`, `role`, `team_name`, `list_state`.
-    `resolved_players` and `goalkeeper_blocks` are the curated admin-list frames
-    from `fantacalcio.identity.admin_official_list`. Returns a copy; never
-    mutates the input in place."""
+    """`player_pool` needs `player_code`, `role`, `team_name`, `list_state`,
+    `round_pool`, `list_pool_name` (i.e. it must already have gone through
+    `round_pools.assign_round_pools`). `resolved_players` and `goalkeeper_blocks`
+    are the curated admin-list frames from `fantacalcio.identity.admin_official_list`
+    (`resolved_players` carries `list_number`/`rank` from the original Markdown
+    blocks). `ruleset` supplies the G1/G2 pool cutoffs (60/60/40) so this module
+    doesn't hardcode them, per CLAUDE.md. Returns a copy; never mutates the input
+    in place."""
     out = player_pool.copy()
     out["admin_rank"] = pd.NA
     out["admin_score"] = pd.NA
     out["admin_gk_block_score"] = pd.NA
 
-    admin_by_code = resolved_players.set_index("player_code")[["rank", "score"]]
+    admin_by_code = resolved_players.set_index("player_code")[["rank", "score", "role"]]
     matched_codes = out["player_code"].isin(admin_by_code.index)
     out.loc[matched_codes, "admin_rank"] = out.loc[matched_codes, "player_code"].map(admin_by_code["rank"])
     out.loc[matched_codes, "admin_score"] = out.loc[matched_codes, "player_code"].map(admin_by_code["score"])
     out.loc[matched_codes, "list_state"] = "official"
+
+    # Hard override: the admin list's own rank decides the round for every
+    # player it resolves, replacing the model-VAR-derived provisional round
+    # rather than only filling in what's missing.
+    out = hard_override_round_pool_from_admin_rank(out, ruleset)
 
     if not goalkeeper_blocks.empty:
         gk_score_by_team = goalkeeper_blocks.set_index("team_name_canonical")["score"]
@@ -52,5 +79,7 @@ def apply_official_admin_list(
             gk_score_by_team
         )
         out.loc[gk_team_matched, "list_state"] = "official"
+        out.loc[gk_team_matched, "round_pool"] = "G1"
+        out.loc[gk_team_matched, "list_pool_name"] = POOL_GOALKEEPER_BLOCKS
 
     return out
