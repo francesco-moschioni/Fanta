@@ -98,7 +98,7 @@ def test_out_of_pool_assignment_raises(ruleset):
             event_id="e1",
             round_id="G1",
             team_id="team-01",
-            pool_id="midfielders_top_1_60",  # not eligible in G1
+            pool_id="midfielders_top_1_20",  # not eligible in G1
             role=Role.MID,
             item=AssignmentItem(player_ids=("mid-01",)),
             amount=10,
@@ -307,7 +307,7 @@ def test_out_of_order_round_raises(ruleset):
             event_id="e2",
             round_id="G2",
             team_id="team-01",
-            pool_id="midfielders_top_1_60",
+            pool_id="midfielders_top_1_20",
             role=Role.MID,
             item=AssignmentItem(player_ids=("mid-01",)),
             amount=10,
@@ -332,7 +332,7 @@ def test_starting_at_a_dependent_round_raises_config_error(ruleset):
             event_id="e1",
             round_id="G2",
             team_id="team-01",
-            pool_id="midfielders_top_1_60",
+            pool_id="midfielders_top_1_20",
             role=Role.MID,
             item=AssignmentItem(player_ids=("mid-01",)),
             amount=10,
@@ -407,7 +407,7 @@ def test_round_budget_carryover_is_per_team_not_shared(ruleset):
             role=Role.DEF, item=AssignmentItem(player_ids=("def-02",)), amount=50,
         ),
         _assign(
-            event_id="e3", round_id="G2", team_id="team-01", pool_id="midfielders_top_1_60",
+            event_id="e3", round_id="G2", team_id="team-01", pool_id="midfielders_top_1_20",
             role=Role.MID, item=AssignmentItem(player_ids=("mid-01",)), amount=1,
         ),
     ]
@@ -459,7 +459,7 @@ def test_budget_adjustment_propagates_to_next_round_via_remaining_chain(ruleset)
             role=Role.DEF, item=AssignmentItem(player_ids=("def-01",)), amount=190,
         ),
         _assign(
-            event_id="e2", round_id="G2", team_id="team-01", pool_id="midfielders_top_1_60",
+            event_id="e2", round_id="G2", team_id="team-01", pool_id="midfielders_top_1_20",
             role=Role.MID, item=AssignmentItem(player_ids=("mid-01",)), amount=1,
         ),
     ]

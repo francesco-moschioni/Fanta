@@ -33,8 +33,11 @@ class Role(str, Enum):
 _KNOWN_POOL_ROLES: dict[str, frozenset[Role]] = {
     "goalkeeper_blocks": frozenset({Role.GK}),
     "defenders_top_1_60": frozenset({Role.DEF}),
-    "midfielders_top_1_60": frozenset({Role.MID}),
-    "forwards_top_1_40": frozenset({Role.FWD}),
+    "midfielders_top_1_20": frozenset({Role.MID}),
+    "midfielders_top_21_40": frozenset({Role.MID}),
+    "midfielders_top_41_60": frozenset({Role.MID}),
+    "forwards_top_1_20": frozenset({Role.FWD}),
+    "forwards_top_21_40": frozenset({Role.FWD}),
 }
 
 

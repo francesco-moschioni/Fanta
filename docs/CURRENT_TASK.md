@@ -2,6 +2,14 @@
 
 Compilare prima di ogni modifica significativa e mantenere lo scope a una singola unità verificabile.
 
+- Obiettivo: G2 (centrocampisti/attaccanti) non è un pool unico per ruolo come G1 — l'admin lo divide in fasce da 20 (3 per centrocampisti, 2 per attaccanti), ciascuna una busta indipendente da 6 preferenze. L'utente vuole comporre e verificare la fattibilità di budget delle 5 buste direttamente nell'app.
+- Stato: **completo e verificato in browser** (ADR-2026-060, ADR-2026-061, ADR-2026-062). Config/dominio corretti per le 5 fasce G2; pagina `app/pages/6_📝_Buste_G2.py` con multiselect per fascia (filtrato per `admin_rank`, mai VAR come fallback silenzioso), bozza persistente in `g2_envelope_picks` (SQLite), fattibilità G2 (caso peggiore + tutte-prime-scelte) e proiezione a valle su G3/G4 (budget residuo vs minimo reale = somma quotazioni dei più economici ancora liberi, non 1 credito a slot). 24 nuovi test totali sul filone, 444 totali passano. Dati reali rigenerati (CSV + DuckDB) per riflettere le nuove fasce.
+- Prossima azione: nessuna bloccante. Possibili estensioni future su richiesta: incrociare le buste G2 con i lock/rosa-ideale già esistenti in Rosa; includere anche G1 (già chiuso) e una riserva unificata su tutto l'arco G1→completamento in un'unica vista.
+
+---
+
+## Task precedente (archiviata)
+
 - Obiettivo: l'app pubblicata su Streamlit Community Cloud parte con un ledger vuoto (storage effimero, ADR-2026-048); l'utente vuole i dati reali di G1 lì senza dover fare upload manuale a ogni riavvio.
 - Stato: **completo e verificato** (ADR-2026-059). Sezione "Importa/esporta ledger" in Squadre (upload/download JSON, merge senza duplicati) + seeding automatico idempotente da Streamlit Secrets (`ledger_store.seed_missing_events_from_streamlit_secrets`, chiave `ledger_seed_json`, mai su Git) richiamato a ogni pagina che usa il ledger. 9 nuovi test, 417 totali passano. Ledger reale (81 eventi) esportato e consegnato all'utente come file.
 - Prossima azione (utente, non bloccante per il codice): (1) push di questo commit; (2) caricare `ledger_export_for_cloud.json` una volta nella pagina Squadre dell'app cloud (import manuale, immediato), OPPURE incollare il contenuto del file nei Secrets del progetto su Streamlit Cloud dashboard con chiave `ledger_seed_json` (si riseeda da solo a ogni riavvio, azione che solo l'utente può fare — l'assistente non ha accesso all'account Cloud).

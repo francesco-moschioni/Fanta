@@ -9,12 +9,14 @@ Nota di coerenza: il meccanismo confermato ora (liste con preferenze, prezzo min
 | Giro | Modalità | Pool | Budget disponibile | Risoluzione |
 |---|---|---|---|---|
 | G1 | Busta chiusa a liste | Blocco portieri + top 60 difensori | 200 | Preferenza (6/lista) prima, offerta poi |
-| G2 | Busta chiusa a liste | Top 60 centrocampisti + top 40 attaccanti | residuo G1 + 100 | Preferenza (6/lista) prima, offerta poi |
+| G2 | Busta chiusa a liste | Top 60 centrocampisti (3 fasce da 20) + top 40 attaccanti (2 fasce da 20) | residuo G1 + 100 | Preferenza (6/lista **per fascia**) prima, offerta poi |
 | G3 | Busta chiusa libera | giocatori rimanenti, nessun vincolo ruolo | residuo G2 + 40 | Offerta più alta, max 6 giocatori |
 | G4 | Busta chiusa libera | giocatori rimanenti, nessun vincolo ruolo | residuo G3 | Offerta più alta, max 6 giocatori |
 | Fase 3 | Nessuna asta | tutti i rimanenti | n/a | Admin assegna manualmente, squadre con più crediti residui prima |
 
 **G3/G4 non sono un'asta aperta/live** — è un errore precedente ora corretto (erano marcati `open_auction` in una versione precedente della config). Restano a busta chiusa come G1/G2, semplicemente senza liste/preferenze: vince chi offre di più.
+
+**G2 è a fasce, non un pool unico per ruolo** (ADR-2026-060, a differenza di G1 dove blocco portieri e top-60 difensori sono ciascuno un unico pool/lista). L'admin numera i 60 centrocampisti e i 40 attaccanti nella lista pubblicata; ogni fascia da 20 (posizioni 1-20, 21-40, 41-60 per i centrocampisti; 1-20, 21-40 per gli attaccanti) è una busta indipendente con le proprie 6 preferenze e la propria risoluzione preferenza-poi-offerta. Significa fino a 3 acquisti di centrocampisti + 2 di attaccanti in G2 (non 1+1). Pool config: `midfielders_top_1_20`, `midfielders_top_21_40`, `midfielders_top_41_60`, `forwards_top_1_20`, `forwards_top_21_40`.
 
 Round, modalità, incrementi, pool e vincoli devono essere letti dalla configurazione versionata, mai hardcoded.
 

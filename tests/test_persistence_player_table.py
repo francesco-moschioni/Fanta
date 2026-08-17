@@ -27,7 +27,7 @@ def _row(player_code, display_name="Player", role="A", team_name="Roma", **kwarg
         quotazione_asta=10, sim_mean=6.5, sim_median=6.0, sim_p10=5.0, sim_p90=8.0,
         player_games_in_pool=50, used_role_pool_only=False, replacement_level=5.5,
         var_mean=1.0, var_p10=-0.5, var_p90=2.5, data_quality_tier="full_history",
-        round_pool="G2", list_pool_name="forwards_top_1_40", list_state="provisional",
+        round_pool="G2", list_pool_name="forwards_top_1_20", list_state="provisional",
     )
     defaults.update(kwargs)
     return defaults

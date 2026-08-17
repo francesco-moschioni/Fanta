@@ -61,3 +61,40 @@ class TestAssignRoundPools:
         pool = pd.DataFrame({"role": ["D", "D"], "quotazione": [10, 5]})
         result = assign_round_pools(pool, ruleset, rank_col="quotazione")
         assert result.iloc[0]["round_pool"] == "G1"
+
+    def test_g2_midfielders_split_into_20_player_bands(self, ruleset):
+        # ADR-2026-060: 60 midfielders should split into 3 sealed-bid lists of 20
+        # (bands, not one G2-wide list), the admin's list order (here: var_mean
+        # descending) determines which band each player lands in.
+        rows = [("C", float(60 - i)) for i in range(60)]
+        pool = _pool(rows)
+        result = assign_round_pools(pool, ruleset)
+        by_band = result[result["role"] == "C"]["list_pool_name"].value_counts()
+        assert by_band.to_dict() == {
+            "midfielders_top_1_20": 20,
+            "midfielders_top_21_40": 20,
+            "midfielders_top_41_60": 20,
+        }
+        top_band = result[result["list_pool_name"] == "midfielders_top_1_20"]
+        bottom_band = result[result["list_pool_name"] == "midfielders_top_41_60"]
+        assert top_band["var_mean"].min() > bottom_band["var_mean"].max()
+
+    def test_g2_forwards_split_into_20_player_bands(self, ruleset):
+        rows = [("A", float(40 - i)) for i in range(40)]
+        pool = _pool(rows)
+        result = assign_round_pools(pool, ruleset)
+        by_band = result[result["role"] == "A"]["list_pool_name"].value_counts()
+        assert by_band.to_dict() == {
+            "forwards_top_1_20": 20,
+            "forwards_top_21_40": 20,
+        }
+
+    def test_g2_band_ties_at_cutoff_spill_into_last_band(self, ruleset):
+        # 61 midfielders, 60th/61st tied -- both included (existing tie policy),
+        # and since neither can be arbitrarily assigned to band 3 vs "band 4" that
+        # doesn't exist, both fall into the last real band (41-60).
+        rows = [("C", float(60 - i)) for i in range(59)] + [("C", 1.0), ("C", 1.0)]
+        pool = _pool(rows)
+        result = assign_round_pools(pool, ruleset)
+        last_band = result[result["list_pool_name"] == "midfielders_top_41_60"]
+        assert len(last_band) == 21
