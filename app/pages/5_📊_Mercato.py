@@ -21,7 +21,13 @@ from fantacalcio.auction.market_model import (
     team_aggressiveness_index,
 )
 from fantacalcio.config import load_ruleset
-from fantacalcio.persistence.ledger_store import connect as connect_ledger, load_current_league_state, load_events
+from fantacalcio.persistence.ledger_store import (
+    SeedFromSecretsError,
+    connect as connect_ledger,
+    load_current_league_state,
+    load_events,
+    seed_missing_events_from_streamlit_secrets,
+)
 from fantacalcio.persistence.player_table import DEFAULT_DB_PATH, connect as connect_players
 from fantacalcio.persistence.team_labels_store import (
     connect as connect_labels,
@@ -84,6 +90,12 @@ ledger_conn = _ledger_conn()
 player_conn = _player_conn()
 labels_conn = _labels_conn()
 seed_missing_labels(labels_conn, load_labels_config())
+try:
+    _n_seeded = seed_missing_events_from_streamlit_secrets(ledger_conn, ruleset)
+    if _n_seeded:
+        st.toast(f"Importati automaticamente {_n_seeded} eventi dal ledger privato (secrets).")
+except SeedFromSecretsError as exc:
+    st.error(f"Seed automatico del ledger da secrets fallito: {exc}")
 team_labels = get_all_labels(labels_conn)
 
 TEAM_IDS = [f"team_{i:02d}" for i in range(1, ruleset.teams + 1)]

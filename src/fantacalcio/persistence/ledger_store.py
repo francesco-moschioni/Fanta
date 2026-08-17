@@ -15,9 +15,9 @@ import json
 import sqlite3
 from pathlib import Path
 
-from ..config import Ruleset
-from ..domain import Event, LeagueState, effective_events, replay
-from ..ledger_io import event_from_dict, event_to_dict
+from ..config import ConfigError, Ruleset
+from ..domain import DomainError, Event, LeagueState, effective_events, replay
+from ..ledger_io import LedgerIOError, event_from_dict, event_to_dict, import_ledger_json_text
 
 DEFAULT_DB_PATH = Path("data/local/ledger.sqlite3")
 
@@ -74,3 +74,58 @@ def load_current_league_state(conn: sqlite3.Connection, ruleset: Ruleset) -> Lea
     """The "current" view a UI should display: voided/corrected assignments are
     excluded before replay, so budget/roster reflect what's actually still true."""
     return replay(ruleset, effective_events(load_events(conn)))
+
+
+class SeedFromSecretsError(ValueError):
+    """Raised when a `ledger_seed_json` secret exists but cannot be applied
+    (malformed JSON, or would violate a domain invariant if appended)."""
+
+
+def seed_missing_events_from_secrets(conn: sqlite3.Connection, ruleset: Ruleset, seed_json_text: str | None) -> int:
+    """Idempotent, additive seeding for Streamlit Community Cloud's ephemeral
+    storage (ADR-2026-048/049/059): reads a ledger export from `st.secrets`
+    (set once, by hand, in the Cloud dashboard -- never committed to git,
+    never something this assistant can do on the user's behalf) and appends
+    only the events not already present (by event_id), so calling this on
+    every page load/container restart is always safe and never re-inserts
+    duplicates. `seed_json_text=None`/empty is a no-op (local runs with no
+    secret configured). Raises `SeedFromSecretsError` if the secret exists
+    but is malformed or would break a domain invariant -- never silently
+    drops a bad seed, since that would look like "everything's fine" when
+    the auction data is actually missing."""
+    if not seed_json_text:
+        return 0
+    try:
+        incoming = import_ledger_json_text(seed_json_text)
+    except LedgerIOError as exc:
+        raise SeedFromSecretsError(f"Secret ledger_seed_json non è un ledger JSON valido: {exc}") from exc
+
+    existing = load_events(conn)
+    existing_ids = {e.event_id for e in existing}
+    new_events = [e for e in incoming if e.event_id not in existing_ids]
+    if not new_events:
+        return 0
+
+    try:
+        replay(ruleset, existing + new_events)
+    except (DomainError, ConfigError) as exc:
+        raise SeedFromSecretsError(f"Il seed da secrets violerebbe un invariante del ledger: {exc}") from exc
+
+    for event in new_events:
+        append_event(conn, event)
+    return len(new_events)
+
+
+def seed_missing_events_from_streamlit_secrets(conn: sqlite3.Connection, ruleset: Ruleset) -> int:
+    """Same as `seed_missing_events_from_secrets`, reading the `ledger_seed_json`
+    key from `st.secrets` (import kept local: this module has no other
+    Streamlit dependency, and stays importable/testable without it installed).
+    Returns 0 silently if secrets aren't configured at all (local runs) --
+    that's the expected, non-error case, not a malformed seed."""
+    try:
+        import streamlit as st
+
+        seed_json_text = st.secrets.get("ledger_seed_json")
+    except Exception:
+        seed_json_text = None
+    return seed_missing_events_from_secrets(conn, ruleset, seed_json_text)

@@ -109,10 +109,18 @@ def import_ledger_json(path: str | Path) -> list[Event]:
     path = Path(path)
     if not path.is_file():
         raise LedgerIOError(f"Ledger file not found: {path}")
+    return import_ledger_json_text(path.read_text(encoding="utf-8"))
+
+
+def import_ledger_json_text(text: str) -> list[Event]:
+    """Same parsing as `import_ledger_json`, from an in-memory string instead of
+    a path -- for a browser file upload (Streamlit Community Cloud's ephemeral
+    storage never carries the real ledger, ADR-2026-048/059: the user transfers
+    a private export through the browser instead, never through git)."""
     try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
+        raw = json.loads(text)
     except json.JSONDecodeError as exc:
-        raise LedgerIOError(f"Ledger file {path} is not valid JSON: {exc}") from exc
+        raise LedgerIOError(f"Ledger content is not valid JSON: {exc}") from exc
     if not isinstance(raw, list):
         raise LedgerIOError(f"Ledger JSON root must be a list of events, got {type(raw).__name__}")
     return [event_from_dict(d) for d in raw]

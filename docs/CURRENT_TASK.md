@@ -2,9 +2,9 @@
 
 Compilare prima di ogni modifica significativa e mantenere lo scope a una singola unità verificabile.
 
-- Obiettivo: la stima usata per correggere il massimo consigliato non doveva essere un moltiplicatore unico per ruolo, e doveva funzionare anche per ruoli mai prezzati (G2 introduce centrocampisti/attaccanti, G1 ha prezzato solo portieri/difensori).
-- Stato: **completo e verificato** (ADR-2026-058). Stima a cascata in `market_model.estimate_price_correction()`: ruolo+fascia di quotazione → ruolo intero → fascia di prezzo ruoli-misti → regime di mercato generale, sempre il livello più specifico affidabile, mai un livello nascosto o mescolato. Nuovo `team_aggressiveness_index()` (segnale di stile squadra trasversale ai ruoli) in pagina Mercato insieme a regime generale e tabelle per fascia. 10 nuovi test, 408 totali passano. Verificato in browser sui dati G1 reali.
-- Prossima azione: nessuna bloccante. Aperto per una futura ADR (non ora): se/come tradurre il segnale di concorrenza (ADR-2026-057) o l'aggressività per squadra in una correzione numerica del prezzo, invece che solo informativa. Quando arriveranno i dati di G2, generalizzare `scripts/import_g1_results.py` se il formato del recap admin cambia — Mercato e il massimo consigliato leggeranno i nuovi dati automaticamente, con la cascata che si sposta da sola verso livelli più specifici man mano che i dati per ruolo si accumulano.
+- Obiettivo: l'app pubblicata su Streamlit Community Cloud parte con un ledger vuoto (storage effimero, ADR-2026-048); l'utente vuole i dati reali di G1 lì senza dover fare upload manuale a ogni riavvio.
+- Stato: **completo e verificato** (ADR-2026-059). Sezione "Importa/esporta ledger" in Squadre (upload/download JSON, merge senza duplicati) + seeding automatico idempotente da Streamlit Secrets (`ledger_store.seed_missing_events_from_streamlit_secrets`, chiave `ledger_seed_json`, mai su Git) richiamato a ogni pagina che usa il ledger. 9 nuovi test, 417 totali passano. Ledger reale (81 eventi) esportato e consegnato all'utente come file.
+- Prossima azione (utente, non bloccante per il codice): (1) push di questo commit; (2) caricare `ledger_export_for_cloud.json` una volta nella pagina Squadre dell'app cloud (import manuale, immediato), OPPURE incollare il contenuto del file nei Secrets del progetto su Streamlit Cloud dashboard con chiave `ledger_seed_json` (si riseeda da solo a ogni riavvio, azione che solo l'utente può fare — l'assistente non ha accesso all'account Cloud).
 
 ---
 

@@ -29,7 +29,12 @@ from fantacalcio.auction.roster_risk import DEFAULT_WARNING_THRESHOLD, compute_c
 from fantacalcio.config import ConfigError, load_ruleset
 from fantacalcio.domain import Role
 from fantacalcio.persistence.avoid_list_store import add_avoid, connect as connect_avoid, list_avoided, remove_avoid
-from fantacalcio.persistence.ledger_store import connect as connect_ledger, load_current_league_state
+from fantacalcio.persistence.ledger_store import (
+    SeedFromSecretsError,
+    connect as connect_ledger,
+    load_current_league_state,
+    seed_missing_events_from_streamlit_secrets,
+)
 from fantacalcio.persistence.locks_store import add_lock, connect as connect_locks, list_locks, remove_lock
 from fantacalcio.persistence.player_table import (
     DEFAULT_DB_PATH,
@@ -99,6 +104,12 @@ avoid_conn = _avoid_conn()
 player_conn = _player_conn()
 labels_conn = _labels_conn()
 seed_missing_labels(labels_conn, load_labels_config())
+try:
+    _n_seeded = seed_missing_events_from_streamlit_secrets(ledger_conn, ruleset)
+    if _n_seeded:
+        st.toast(f"Importati automaticamente {_n_seeded} eventi dal ledger privato (secrets).")
+except SeedFromSecretsError as exc:
+    st.error(f"Seed automatico del ledger da secrets fallito: {exc}")
 team_labels = get_all_labels(labels_conn)
 
 TEAM_IDS = [f"team_{i:02d}" for i in range(1, ruleset.teams + 1)]

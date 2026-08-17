@@ -1,4 +1,5 @@
 import csv
+import json
 
 import pytest
 
@@ -11,6 +12,7 @@ from fantacalcio.ledger_io import (
     export_assignments_csv,
     export_ledger_json,
     import_ledger_json,
+    import_ledger_json_text,
 )
 
 
@@ -53,6 +55,23 @@ def test_import_missing_field_raises(tmp_path):
     path.write_text('[{"type": "assignment", "event_id": "e1"}]', encoding="utf-8")
     with pytest.raises(LedgerIOError, match="missing field"):
         import_ledger_json(path)
+
+
+def test_import_json_text_roundtrip(ruleset):
+    events = generate_demo_events(ruleset)
+    text = json.dumps([event_to_dict(e) for e in events])
+    reimported = import_ledger_json_text(text)
+    assert replay(ruleset, reimported).assigned_players == replay(ruleset, events).assigned_players
+
+
+def test_import_json_text_malformed_raises():
+    with pytest.raises(LedgerIOError, match="not valid JSON"):
+        import_ledger_json_text("{not valid json")
+
+
+def test_import_json_text_non_list_root_raises():
+    with pytest.raises(LedgerIOError, match="must be a list"):
+        import_ledger_json_text('{"type": "assignment"}')
 
 
 def test_csv_export_reflects_status(ruleset, tmp_path):

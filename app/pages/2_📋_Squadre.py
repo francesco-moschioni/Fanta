@@ -9,6 +9,7 @@ registrando un VoidEvent, mai modificando un evento esistente.
 
 from __future__ import annotations
 
+import json
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -27,11 +28,14 @@ from fantacalcio.domain import (
     effective_events,
     replay,
 )
+from fantacalcio.ledger_io import LedgerIOError, event_to_dict, import_ledger_json_text
 from fantacalcio.persistence.ledger_store import (
+    SeedFromSecretsError,
     append_event,
     connect as connect_ledger,
     load_current_league_state,
     load_events,
+    seed_missing_events_from_streamlit_secrets,
 )
 from fantacalcio.persistence.player_table import DEFAULT_DB_PATH, connect as connect_players, get_player, search_players
 from fantacalcio.persistence.team_labels_store import (
@@ -96,6 +100,12 @@ ledger_conn = _ledger_conn()
 player_conn = _player_conn()
 labels_conn = _labels_conn()
 seed_missing_labels(labels_conn, load_labels_config())
+try:
+    _n_seeded = seed_missing_events_from_streamlit_secrets(ledger_conn, ruleset)
+    if _n_seeded:
+        st.toast(f"Importati automaticamente {_n_seeded} eventi dal ledger privato (secrets).")
+except SeedFromSecretsError as exc:
+    st.error(f"Seed automatico del ledger da secrets fallito: {exc}")
 team_labels = get_all_labels(labels_conn)
 
 TEAM_IDS = [f"team_{i:02d}" for i in range(1, ruleset.teams + 1)]
@@ -377,3 +387,51 @@ else:
             append_event(ledger_conn, void)
             st.success("Evento annullato.")
             st.rerun()
+
+st.divider()
+st.subheader("Importa / esporta ledger")
+st.caption(
+    "Serve solo se usi l'app **sia in locale che pubblicata online** (Streamlit "
+    "Community Cloud): lo storage del cloud è effimero, ogni riavvio del "
+    "container riparte con un ledger vuoto (scelta consapevole per non "
+    "pubblicare mai dati privati dell'asta su Git, ADR-2026-048). Qui puoi "
+    "scaricare un file JSON dal ledger di questa istanza e caricarlo "
+    "sull'altra, senza passare da Git — il trasferimento resta solo tra il "
+    "tuo browser e il server, mai pubblicato."
+)
+
+export_col, import_col = st.columns(2)
+with export_col:
+    st.markdown("**Esporta**")
+    export_json = json.dumps([event_to_dict(e) for e in all_events], indent=2, ensure_ascii=False)
+    st.download_button(
+        "Scarica ledger.json",
+        data=export_json,
+        file_name=f"ledger_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.json",
+        mime="application/json",
+    )
+with import_col:
+    st.markdown("**Importa**")
+    uploaded = st.file_uploader("Carica un ledger.json esportato da un'altra istanza", type="json")
+    if uploaded is not None:
+        try:
+            incoming = import_ledger_json_text(uploaded.getvalue().decode("utf-8"))
+        except LedgerIOError as exc:
+            st.error(f"File non valido: {exc}")
+        else:
+            existing_ids = {e.event_id for e in all_events}
+            new_events = [e for e in incoming if e.event_id not in existing_ids]
+            skipped = len(incoming) - len(new_events)
+            if not new_events:
+                st.info(f"Nessun evento nuovo da importare ({skipped} già presenti, saltati).")
+            else:
+                try:
+                    replay(ruleset, all_events + new_events)
+                except (DomainError, ConfigError) as exc:
+                    st.error(f"Import non valido, nessuna scrittura effettuata: {exc}")
+                else:
+                    if st.button(f"Conferma import di {len(new_events)} eventi nuovi ({skipped} già presenti, saltati)"):
+                        for e in new_events:
+                            append_event(ledger_conn, e)
+                        st.success(f"Importati {len(new_events)} eventi.")
+                        st.rerun()

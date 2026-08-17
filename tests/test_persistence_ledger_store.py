@@ -1,13 +1,18 @@
+import json
+
 import pytest
 
 from fantacalcio.config import Ruleset, RosterComposition, Round
 from fantacalcio.domain import AssignmentEvent, AssignmentItem, Role, VoidEvent
+from fantacalcio.ledger_io import event_to_dict
 from fantacalcio.persistence.ledger_store import (
+    SeedFromSecretsError,
     append_event,
     connect,
     load_current_league_state,
     load_events,
     load_league_state,
+    seed_missing_events_from_secrets,
 )
 
 
@@ -119,3 +124,53 @@ class TestLoadCurrentLeagueState:
         current = load_current_league_state(conn, _ruleset())
         full = load_league_state(conn, _ruleset())
         assert current.assigned_players == full.assigned_players
+
+
+class TestSeedMissingEventsFromSecrets:
+    def test_none_or_empty_is_noop(self, tmp_path):
+        conn = connect(tmp_path / "ledger.sqlite3")
+        assert seed_missing_events_from_secrets(conn, _ruleset(), None) == 0
+        assert seed_missing_events_from_secrets(conn, _ruleset(), "") == 0
+        assert load_events(conn) == []
+
+    def test_seeds_missing_events(self, tmp_path):
+        conn = connect(tmp_path / "ledger.sqlite3")
+        seed_json = json.dumps([event_to_dict(_assignment(event_id="e1"))])
+        n = seed_missing_events_from_secrets(conn, _ruleset(), seed_json)
+        assert n == 1
+        assert len(load_events(conn)) == 1
+
+    def test_idempotent_on_second_call(self, tmp_path):
+        conn = connect(tmp_path / "ledger.sqlite3")
+        seed_json = json.dumps([event_to_dict(_assignment(event_id="e1"))])
+        seed_missing_events_from_secrets(conn, _ruleset(), seed_json)
+        n_second = seed_missing_events_from_secrets(conn, _ruleset(), seed_json)
+        assert n_second == 0
+        assert len(load_events(conn)) == 1
+
+    def test_only_seeds_events_not_already_present(self, tmp_path):
+        conn = connect(tmp_path / "ledger.sqlite3")
+        append_event(conn, _assignment(event_id="e1", player_id="p1"))
+        seed_json = json.dumps([
+            event_to_dict(_assignment(event_id="e1", player_id="p1")),
+            event_to_dict(_assignment(event_id="e2", player_id="p2")),
+        ])
+        n = seed_missing_events_from_secrets(conn, _ruleset(), seed_json)
+        assert n == 1
+        assert {e.event_id for e in load_events(conn)} == {"e1", "e2"}
+
+    def test_malformed_json_raises(self, tmp_path):
+        conn = connect(tmp_path / "ledger.sqlite3")
+        with pytest.raises(SeedFromSecretsError, match="non è un ledger JSON valido"):
+            seed_missing_events_from_secrets(conn, _ruleset(), "{not valid json")
+
+    def test_invariant_violation_raises_and_does_not_partially_write(self, tmp_path):
+        conn = connect(tmp_path / "ledger.sqlite3")
+        # same player_id assigned twice to different teams in the seed itself -> invalid
+        seed_json = json.dumps([
+            event_to_dict(_assignment(event_id="e1", team_id="team_01", player_id="p1")),
+            event_to_dict(_assignment(event_id="e2", team_id="team_02", player_id="p1")),
+        ])
+        with pytest.raises(SeedFromSecretsError):
+            seed_missing_events_from_secrets(conn, _ruleset(), seed_json)
+        assert load_events(conn) == []
