@@ -119,3 +119,94 @@ class TestRecommendMaxBid:
         pool = _pool([(1, 5.0)])
         with pytest.raises(BidRecommendationError, match="already full"):
             recommend_max_bid(state, ruleset, "team-01", "G1", 1, 5.0, pool)
+
+
+class TestMarketContext:
+    def _players_conn(self, tmp_path, rows):
+        from fantacalcio.persistence.player_table import REQUIRED_COLUMNS, build_player_table, connect
+
+        def _row(player_code, role="D", quotazione_asta=10):
+            defaults = {c: None for c in REQUIRED_COLUMNS}
+            defaults.update(
+                player_code=player_code, display_name=f"P{player_code}", role=role, team_name="Roma",
+                quotazione_asta=quotazione_asta, admin_score=None,
+                sim_mean=6.5, sim_median=6.0, sim_p10=5.0, sim_p90=8.0,
+                player_games_in_pool=50, used_role_pool_only=False, replacement_level=5.5,
+                var_mean=1.0, var_p10=-0.5, var_p90=2.5, data_quality_tier="full_history",
+                round_pool="G1", list_pool_name="defenders_top_1_60", list_state="provisional",
+            )
+            return defaults
+
+        csv_path = tmp_path / "source.csv"
+        df = pd.DataFrame([_row(*r) for r in rows])
+        if "admin_score" not in df.columns:
+            df["admin_score"] = None
+        df.to_csv(csv_path, index=False)
+        db_path = tmp_path / "db.duckdb"
+        build_player_table(source_csv=csv_path, db_path=db_path)
+        return connect(db_path)
+
+    def test_no_market_context_leaves_max_bid_equal_to_base_bid(self, ruleset):
+        state = replay(ruleset, [])
+        pool = _pool([(1, 5.0), (2, 1.0)])
+        rec = recommend_max_bid(state, ruleset, "team-01", "G1", 1, 5.0, pool)
+        assert rec.max_bid == rec.base_bid
+        assert rec.inflation_ratio is None
+        assert "Correzione di mercato non disponibile" in rec.explanation[-2]
+
+    def test_inflation_scales_up_max_bid(self, ruleset, tmp_path):
+        # historical data: defenders paid 2x quotazione in a different round
+        history = [
+            AssignmentEvent(
+                event_id=f"h{i}", ts="t", round_id="G3", team_id="team-99",
+                pool_id="remaining_players", role=Role.DEF,
+                item=AssignmentItem(player_ids=(str(100 + i),)), amount=20,
+                source="test", author="test",
+            )
+            for i in range(3)
+        ]
+        # need those historical players priced too
+        conn2 = self._players_conn(tmp_path, [(10, "D", 10)] + [(100 + i, "D", 10) for i in range(3)])
+        state = replay(ruleset, [])
+        pool = _pool([(10, 5.0)])
+        rec = recommend_max_bid(
+            state, ruleset, "team-01", "G1", 10, 5.0, pool,
+            voti_role="D", player_conn=conn2, all_events=history,
+        )
+        assert rec.inflation_ratio == pytest.approx(2.0)
+        assert rec.inflation_n == 3
+        assert rec.max_bid == min(int(round(rec.base_bid * 2.0)), rec.remaining_budget)
+        assert any("Correzione di mercato" in line for line in rec.explanation)
+
+    def test_current_round_excluded_from_inflation_baseline(self, ruleset, tmp_path):
+        conn = self._players_conn(tmp_path, [(10, "D", 10), (11, "D", 10)])
+        # a purchase in the SAME round being bid on must not count as history
+        events = [
+            AssignmentEvent(
+                event_id="e1", ts="t", round_id="G1", team_id="team-02",
+                pool_id="defenders_top_1_60", role=Role.DEF,
+                item=AssignmentItem(player_ids=("11",)), amount=50,
+                source="test", author="test",
+            )
+        ]
+        state = replay(ruleset, events)
+        pool = _pool([(10, 5.0)])
+        rec = recommend_max_bid(
+            state, ruleset, "team-01", "G1", 10, 5.0, pool,
+            voti_role="D", player_conn=conn, all_events=events,
+        )
+        assert rec.inflation_ratio is None
+        assert rec.max_bid == rec.base_bid
+
+    def test_competition_signal_reported_not_multiplied(self, ruleset, tmp_path):
+        conn = self._players_conn(tmp_path, [(10, "D", 10)])
+        state = replay(ruleset, [])
+        pool = _pool([(10, 5.0)])
+        rec = recommend_max_bid(
+            state, ruleset, "team-01", "G1", 10, 5.0, pool,
+            voti_role="D", opponent_ids=["team-02", "team-03"],
+        )
+        assert rec.competition_teams_total == 2
+        assert rec.competition_teams_needing == 2  # neither has bought anything yet
+        assert rec.max_bid == rec.base_bid  # competition never changes the price
+        assert any("Concorrenza stimata" in line for line in rec.explanation)

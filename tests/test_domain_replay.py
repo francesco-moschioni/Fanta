@@ -141,7 +141,7 @@ def test_roster_quota_exceeded_raises(ruleset):
         replay(ruleset, events)
 
 
-def test_goalkeeper_block_wrong_size_raises(ruleset):
+def test_goalkeeper_block_oversized_raises(ruleset):
     events = [
         _assign(
             event_id="e1",
@@ -149,12 +149,36 @@ def test_goalkeeper_block_wrong_size_raises(ruleset):
             team_id="team-01",
             pool_id="goalkeeper_blocks",
             role=Role.GK,
-            item=AssignmentItem(player_ids=("gk-01", "gk-02")),  # needs 3
+            item=AssignmentItem(player_ids=("gk-01", "gk-02", "gk-03", "gk-04")),  # max 3
             amount=10,
         ),
     ]
-    with pytest.raises(DomainError, match="goalkeeper block must have exactly"):
+    with pytest.raises(DomainError, match="goalkeeper block must have at most"):
         replay(ruleset, events)
+
+
+def test_goalkeeper_block_undersized_is_allowed(ruleset):
+    """A club with fewer than goalkeeper_block_size real goalkeepers on file
+    (data gap, e.g. Cagliari/Lecce with only 2) can still form a valid block --
+    only an oversized block is a real bug (ADR-2026-055)."""
+    events = [
+        _assign(
+            event_id="e1",
+            round_id="G1",
+            team_id="team-01",
+            pool_id="goalkeeper_blocks",
+            role=Role.GK,
+            item=AssignmentItem(player_ids=("gk-01", "gk-02")),
+            amount=10,
+        ),
+    ]
+    state = replay(ruleset, events)
+    assert state.teams["team-01"].roster[Role.GK] == ["gk-01", "gk-02"]
+
+
+def test_goalkeeper_block_empty_raises_at_construction():
+    with pytest.raises(DomainError, match="at least one player"):
+        AssignmentItem(player_ids=())
 
 
 def test_second_goalkeeper_block_for_same_team_raises(ruleset):

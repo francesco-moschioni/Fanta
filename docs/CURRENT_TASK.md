@@ -2,9 +2,9 @@
 
 Compilare prima di ogni modifica significativa e mantenere lo scope a una singola unità verificabile.
 
-- Obiettivo: controfattuale "cosa posso prendere per il resto della rosa" dato quanto l'utente pensa di pagare i suoi lock — nuovo campo `planned_price` sui lock + wiring nella "Rosa ideale" già esistente, con il vincolo che i candidati non bloccati non possano mai costare meno della loro quotazione (ADR-2026-053), poi corretto perché la quotazione admin per-giocatore (già importata come `admin_score` ma mai usata come prezzo) sostituisse ovunque quella fantacalcio invece di affiancarla (ADR-2026-054).
-- Stato: **completo e verificato**. `planned_price` (nullable, migrazione additiva) in `locks_store.py`; `candidate_price_floor()` in `roster_optimizer.py`; `effective_quotazione()` in `player_table.py` (admin_score quando presente, altrimenti quotazione_asta); applicata in `app/pages/1_🔍_Giocatori.py`, `4_⚖️_Confronto.py`, `3_⭐_Rosa.py`. 10 nuovi test, 383 totali passano. Verificato in browser sul DB reale: migrazione automatica sui lock pre-esistenti, form funzionante, ottimizzatore senza errori, Martinez L. mostra correttamente 74 (admin_score) invece di 35 (quotazione fantacalcio).
-- Prossima azione: nessuna bloccante.
+- Obiettivo: la stima usata per correggere il massimo consigliato non doveva essere un moltiplicatore unico per ruolo, e doveva funzionare anche per ruoli mai prezzati (G2 introduce centrocampisti/attaccanti, G1 ha prezzato solo portieri/difensori).
+- Stato: **completo e verificato** (ADR-2026-058). Stima a cascata in `market_model.estimate_price_correction()`: ruolo+fascia di quotazione → ruolo intero → fascia di prezzo ruoli-misti → regime di mercato generale, sempre il livello più specifico affidabile, mai un livello nascosto o mescolato. Nuovo `team_aggressiveness_index()` (segnale di stile squadra trasversale ai ruoli) in pagina Mercato insieme a regime generale e tabelle per fascia. 10 nuovi test, 408 totali passano. Verificato in browser sui dati G1 reali.
+- Prossima azione: nessuna bloccante. Aperto per una futura ADR (non ora): se/come tradurre il segnale di concorrenza (ADR-2026-057) o l'aggressività per squadra in una correzione numerica del prezzo, invece che solo informativa. Quando arriveranno i dati di G2, generalizzare `scripts/import_g1_results.py` se il formato del recap admin cambia — Mercato e il massimo consigliato leggeranno i nuovi dati automaticamente, con la cascata che si sposta da sola verso livelli più specifici man mano che i dati per ruolo si accumulano.
 
 ---
 

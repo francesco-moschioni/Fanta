@@ -20,7 +20,7 @@ from fantacalcio.auction.lock_feasibility import check_lock_feasibility
 from fantacalcio.auction.replacement import league_slots_per_role
 from fantacalcio.config import ConfigError, load_ruleset
 from fantacalcio.persistence.avoid_list_store import add_avoid, connect as connect_avoid, is_avoided, remove_avoid
-from fantacalcio.persistence.ledger_store import connect as connect_ledger, load_current_league_state
+from fantacalcio.persistence.ledger_store import connect as connect_ledger, load_current_league_state, load_events
 from fantacalcio.persistence.locks_store import add_lock, connect as connect_locks, is_locked, list_locks, remove_lock
 from fantacalcio.persistence.player_table import (
     DEFAULT_DB_PATH,
@@ -409,9 +409,14 @@ if round_pool == "G3_G4":
 
 pool_df = search_players(conn, role=player["role"], round_pool=round_pool)[["player_code", "var_mean"]]
 
+all_ledger_events = load_events(ledger_conn)
+TEAM_IDS = [f"team_{i:02d}" for i in range(1, ruleset.teams + 1)]
+opponent_ids = [t for t in TEAM_IDS if t != my_team_id]
+
 try:
     rec = recommend_max_bid(
-        league_state, ruleset, my_team_id, round_choice, int(player["player_code"]), float(player["var_mean"]), pool_df
+        league_state, ruleset, my_team_id, round_choice, int(player["player_code"]), float(player["var_mean"]), pool_df,
+        voti_role=player["role"], player_conn=conn, all_events=all_ledger_events, opponent_ids=opponent_ids,
     )
 except BidRecommendationError as exc:
     st.info(f"Massimo consigliato non disponibile per questo giocatore/squadra: {exc}")
@@ -425,24 +430,24 @@ else:
     c1, c2, c3 = st.columns(3)
     c1.metric(
         "Massimo consigliato (tetto)", rec.max_bid,
-        help="Formula 'dollar rule' standard delle aste fantasy: budget discrezionale distribuito per quota di VAR positivo. Traccia sotto.",
+        help="Dollar rule (budget discrezionale per quota di VAR positivo), corretta per l'inflazione osservata sul ruolo negli altri turni già chiusi. Traccia sotto.",
+        delta=(f"base {rec.base_bid} → corretto {rec.max_bid}" if rec.inflation_ratio is not None else None),
     )
     c2.metric("Budget residuo squadra", rec.remaining_budget, help=f"Budget rimanente di {my_team_label} per questo turno, dal ledger vivo.")
     c3.metric("Slot ancora da riempire", rec.remaining_slots_total, help="Slot di rosa non ancora coperti, per tutti i ruoli, letti dal ledger vivo.")
 
-    with st.expander("Come si calcola questo numero? (massimo consigliato)"):
-        st.markdown(
-            f"1. Budget residuo di {my_team_label} per questo turno: **{rec.remaining_budget}**\n"
-            f"2. Slot ancora da riempire (incluso questo): **{rec.remaining_slots_total}** → riserva "
-            f"1 credito per ciascuno degli altri **{rec.reserve_for_other_slots}** slot\n"
-            f"3. Budget discrezionale = {rec.remaining_budget} − {rec.reserve_for_other_slots} = "
-            f"**{rec.discretionary_budget}**\n"
-            f"4. VAR di {player['display_name']}: **{rec.player_var:.2f}**; somma VAR positivo nel "
-            f"pool residuo dello stesso turno/ruolo: **{rec.pool_var_sum:.2f}**\n"
-            f"5. Quota VAR = {rec.player_var:.2f} / {rec.pool_var_sum:.2f} = **{rec.var_share:.1%}**\n"
-            f"6. Massimo consigliato = 1 + {rec.var_share:.1%} × {rec.discretionary_budget} = "
-            f"**{rec.max_bid}**"
+    if rec.competition_teams_needing is not None:
+        note = "" if rec.competition_teams_needing == 0 else " — segnale informativo, non incluso nel prezzo qui sopra"
+        st.caption(
+            f"Concorrenza stimata: **{rec.competition_teams_needing}/{rec.competition_teams_total}** squadre "
+            f"avversarie hanno ancora uno slot **{ROLE_LABELS.get(player['role'], player['role'])}** scoperto"
+            + (f", budget medio/slot tra chi ne ha bisogno: **{rec.competition_avg_budget_per_slot:.1f}**" if rec.competition_avg_budget_per_slot is not None else "")
+            + note
         )
+
+    with st.expander("Come si calcola questo numero? (massimo consigliato — passo per passo)"):
+        for i, step in enumerate(rec.explanation, start=1):
+            st.markdown(f"{i}. {step}")
 
 with st.expander("Non ancora disponibile in questa vista"):
     st.write(

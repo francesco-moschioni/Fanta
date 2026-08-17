@@ -289,12 +289,16 @@ def replay(ruleset: Ruleset, events: list[Event]) -> LeagueState:
             )
 
         if event.role is Role.GK:
-            if len(event.item.player_ids) != ruleset.roster.goalkeeper_block_size:
+            if len(event.item.player_ids) > ruleset.roster.goalkeeper_block_size:
                 raise DomainError(
-                    f"Event {event.event_id}: goalkeeper block must have exactly "
+                    f"Event {event.event_id}: goalkeeper block must have at most "
                     f"{ruleset.roster.goalkeeper_block_size} players, got "
                     f"{len(event.item.player_ids)}"
                 )
+            # A block below the configured size is allowed: some real clubs have
+            # fewer than goalkeeper_block_size goalkeepers on file (data gap, not
+            # a modeling error) -- e.g. Cagliari/Lecce with only 2 (ADR-2026-055).
+            # An oversized block is still rejected: that would always be a bug.
             if team.gk_block_identity is not None:
                 raise DomainError(
                     f"Event {event.event_id}: team {event.team_id} already has a goalkeeper block"
