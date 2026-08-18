@@ -24,9 +24,20 @@ from fantacalcio.auction.g2_envelope_feasibility import (
 )
 from fantacalcio.config import ConfigError, load_ruleset
 from fantacalcio.persistence.g2_envelopes_store import connect as connect_envelopes, list_picks, remove_pick, save_pick
-from fantacalcio.persistence.ledger_store import connect as connect_ledger, load_current_league_state
+from fantacalcio.persistence.ledger_store import (
+    SeedFromSecretsError,
+    connect as connect_ledger,
+    load_current_league_state,
+    seed_missing_events_from_streamlit_secrets,
+)
 from fantacalcio.persistence.player_table import connect as connect_players, get_player, search_players
-from fantacalcio.persistence.team_labels_store import connect as connect_labels, display_name, get_all_labels
+from fantacalcio.persistence.team_labels_store import (
+    connect as connect_labels,
+    display_name,
+    get_all_labels,
+    load_labels_config,
+    seed_missing_labels,
+)
 
 st.set_page_config(page_title="Fantacalcio — Buste G2", page_icon="📝", layout="wide")
 st.title("Buste G2")
@@ -53,6 +64,14 @@ ledger_conn = connect_ledger()
 envelope_conn = connect_envelopes()
 player_conn = connect_players()
 labels_conn = connect_labels()
+
+seed_missing_labels(labels_conn, load_labels_config())
+try:
+    _n_seeded = seed_missing_events_from_streamlit_secrets(ledger_conn, ruleset)
+    if _n_seeded:
+        st.toast(f"Importati automaticamente {_n_seeded} eventi dal ledger privato (secrets).")
+except SeedFromSecretsError as exc:
+    st.error(f"Seed automatico del ledger da secrets fallito: {exc}")
 
 TEAM_IDS = [f"team_{i:02d}" for i in range(1, ruleset.teams + 1)]
 my_team_id = st.session_state.get("my_team_id", TEAM_IDS[0])
