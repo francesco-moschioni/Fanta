@@ -38,7 +38,13 @@ from ..config import Ruleset
 from ..domain import LeagueState
 from ..persistence.player_table import effective_quotazione
 from .bid_recommendation import budget_remaining_for_round, remaining_roster_slots
-from .market_model import estimate_price_correction, market_regime_ratio, team_aggressiveness_index
+from .market_model import (
+    TeamPreferenceProfile,
+    estimate_price_correction,
+    market_regime_ratio,
+    team_aggressiveness_index,
+    team_price_multiplier,
+)
 
 DEFAULT_N_SIMULATIONS = 5000
 DEFAULT_SEED = 42
@@ -83,10 +89,18 @@ def simulate_opponent_competition(
     round_id: str = "G3",
     n_simulations: int = DEFAULT_N_SIMULATIONS,
     seed: int = DEFAULT_SEED,
+    preference_profiles: dict[str, TeamPreferenceProfile] | None = None,
 ) -> CompetitionSimulation:
     """`undrafted_pool` must have `player_code`/`role` columns and already
     exclude every player the real ledger shows as assigned (same contract as
-    `bid_recommendation.recommend_max_bid`'s `undrafted_pool`)."""
+    `bid_recommendation.recommend_max_bid`'s `undrafted_pool`).
+
+    `preference_profiles` (optional, `market_model.team_preference_profiles`,
+    ADR-2026-065) refines the per-opponent style multiplier with the FULL
+    preference history (including lost bids), not just their ledger wins,
+    when there's enough data for that specific team -- falls back to
+    `team_aggressiveness_index` (ledger-only) otherwise, via
+    `market_model.team_price_multiplier`. Confirmed with the user 2026-08-18."""
     voti_role = player_row["role"]
     quot = effective_quotazione(player_row)
 
@@ -102,7 +116,7 @@ def simulate_opponent_competition(
 
     remaining_pool_size = int((undrafted_pool["role"] == voti_role).sum())
 
-    candidates: list[tuple[str, float, float]] = []  # (team_id, p_bid, team_ratio_multiplier)
+    candidates: list[tuple[str, float, float, str]] = []  # (team_id, p_bid, team_ratio_multiplier, multiplier_source)
     for opponent_id in opponent_ids:
         team_state = league_state.team(opponent_id)
         slots = remaining_roster_slots(team_state, ruleset)
@@ -115,18 +129,18 @@ def simulate_opponent_competition(
         if p_bid <= 0:
             continue
 
-        team_multiplier = 1.0
-        team_agg = aggressiveness.get(opponent_id)
-        if team_agg is not None and team_agg.reliable and regime is not None and regime.mean_ratio > 0:
-            team_multiplier = team_agg.team_mean_ratio / regime.mean_ratio
-        candidates.append((opponent_id, p_bid, team_multiplier))
+        regime_mean = regime.mean_ratio if regime is not None else None
+        team_multiplier, multiplier_source = team_price_multiplier(
+            opponent_id, aggressiveness, regime_mean, preference_profiles,
+        )
+        candidates.append((opponent_id, p_bid, team_multiplier, multiplier_source))
 
     rng = np.random.default_rng(seed)
     max_bids: list[int] = []
     no_competition_count = 0
     for _ in range(n_simulations):
         sim_bids = []
-        for _team_id, p_bid, team_multiplier in candidates:
+        for _team_id, p_bid, team_multiplier, _source in candidates:
             if rng.random() < p_bid:
                 ratio = rng.uniform(base_low, base_high) * team_multiplier
                 ratio = max(ratio, 1.0)  # can never bid below the player's own quotazione (G3/G4 rule)
@@ -138,11 +152,17 @@ def simulate_opponent_competition(
             no_competition_count += 1
 
     max_bids_arr = np.array(max_bids)
+    source_counts: dict[str, int] = {}
+    for _tid, _p, _m, msource in candidates:
+        source_counts[msource] = source_counts.get(msource, 0) + 1
+    style_breakdown = "; ".join(f"{n} da {label}" for label, n in source_counts.items())
+
     explanation = [
         f"Quotazione effettiva del giocatore: {quot}",
         f"Correzione di inflazione usata: {source}" + ("" if reliable else " (poco affidabile, pochi dati)"),
         f"{len(candidates)} avversari eleggibili (slot di ruolo {voti_role!r} scoperto + budget G3 sufficiente per il minimo) "
         f"su un pool residuo di {remaining_pool_size} giocatori di quel ruolo.",
+        f"Stile di offerta per squadra: {style_breakdown}." if style_breakdown else "Nessun avversario eleggibile.",
         f"Probabilità stimata che NESSUN avversario faccia un'offerta su questo giocatore: {no_competition_count / n_simulations:.0%}",
         f"Offerta massima avversaria simulata: mediana {int(np.percentile(max_bids_arr, 50))}, "
         f"90° percentile {int(np.percentile(max_bids_arr, 90))} (su {n_simulations} simulazioni, seed={seed}).",

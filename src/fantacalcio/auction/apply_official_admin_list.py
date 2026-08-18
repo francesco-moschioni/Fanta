@@ -54,11 +54,32 @@ def apply_official_admin_list(
     (`resolved_players` carries `list_number`/`rank` from the original Markdown
     blocks). `ruleset` supplies the G1/G2 pool cutoffs (60/60/40) so this module
     doesn't hardcode them, per CLAUDE.md. Returns a copy; never mutates the input
-    in place."""
+    in place.
+
+    Synthetic new-signing rows (negative `player_code`, `scripts/add_new_signings.py`,
+    ADR-2026-051) are outside this function's authority: they can never appear in
+    `resolved_players` (that CSV only carries identities resolved against the
+    model's own anchor roster, which these players have no `player_code` in by
+    definition), so the blanket reset below used to silently wipe the
+    `admin_rank`/`admin_score` those rows already carry from the admin list's own
+    numbering -- a real bug found 2026-08-18: it made them fail
+    `g2_envelope_feasibility.check_pick_feasibility`'s "admin_rank known" gate in
+    the app, even though they ARE genuinely on the admin's official list. Their
+    values are preserved across the reset instead of being recomputed here."""
     out = player_pool.copy()
+    has_prior_admin_data = "admin_rank" in out.columns and "admin_score" in out.columns
+    negative_code_admin_data = (
+        out.loc[out["player_code"] < 0, ["player_code", "admin_rank", "admin_score"]]
+        if has_prior_admin_data else pd.DataFrame(columns=["player_code", "admin_rank", "admin_score"])
+    )
     out["admin_rank"] = pd.NA
     out["admin_score"] = pd.NA
     out["admin_gk_block_score"] = pd.NA
+    if not negative_code_admin_data.empty:
+        out = out.set_index("player_code")
+        out.loc[negative_code_admin_data["player_code"], "admin_rank"] = negative_code_admin_data.set_index("player_code")["admin_rank"]
+        out.loc[negative_code_admin_data["player_code"], "admin_score"] = negative_code_admin_data.set_index("player_code")["admin_score"]
+        out = out.reset_index()
 
     admin_by_code = resolved_players.set_index("player_code")[["rank", "score", "role"]]
     matched_codes = out["player_code"].isin(admin_by_code.index)

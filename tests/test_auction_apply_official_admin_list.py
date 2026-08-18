@@ -114,3 +114,22 @@ def test_empty_goalkeeper_blocks_leaves_players_untouched(ruleset):
     )
     row = out[out["player_code"] == 3].iloc[0]
     assert row["list_state"] == "provisional"
+
+
+def test_synthetic_new_signing_admin_rank_preserved_across_reset(ruleset):
+    """Negative player_code = a synthetic new-signing row (scripts/add_new_signings.py,
+    ADR-2026-051), which can never appear in `resolved_players` -- the blanket
+    reset must not wipe the admin_rank/admin_score it already carries."""
+    pool_with_new_signing = pd.concat([
+        _POOL,
+        pd.DataFrame([{
+            "player_code": -1, "role": "C", "team_name": "Frosinone",
+            "list_state": "official", "round_pool": "G2", "list_pool_name": "midfielders_top_41_60",
+            "admin_rank": 43, "admin_score": 21.0,
+        }]),
+    ], ignore_index=True)
+    out = apply_official_admin_list(pool_with_new_signing, _RESOLVED, _GK_BLOCKS, ruleset)
+    row = out[out["player_code"] == -1].iloc[0]
+    assert row["admin_rank"] == 43
+    assert row["admin_score"] == 21.0
+    assert row["list_state"] == "official"

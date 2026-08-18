@@ -110,3 +110,31 @@ class TestSimulateOpponentCompetition:
         sim = simulate_opponent_competition(target, ruleset, state, conn, events, ["team_02"], pool, seed=1)
         assert any("Correzione di inflazione" in line for line in sim.explanation)
         assert not sim.price_correction_reliable  # no historical data at all
+
+
+class TestPreferenceProfilesIntegration:
+    def test_preference_profile_influences_simulated_bids(self, ruleset, tmp_path):
+        from fantacalcio.auction.market_model import TeamPreferenceProfile
+
+        rows = [_row(i, quotazione_asta=10) for i in range(1, 30)]
+        conn = _players_conn(tmp_path, rows)
+        fwd_events = [_assign(f"e{i}", "team_02", "G2", "forwards_top_1_20", (str(i),), 15) for i in range(1, 5)]
+        events = _through_g2("team_02", fwd_events)
+        state = replay(ruleset, events)
+        pool = pd.DataFrame({"player_code": range(1, 30), "role": ["A"] * 29})
+        target = pd.Series(_row(99, quotazione_asta=10))
+
+        # A team_02 preference profile showing extreme overbidding (5x) should
+        # push simulated opponent bids meaningfully higher than the no-profile case.
+        aggressive_profile = {
+            "team_02": TeamPreferenceProfile(
+                team_id="team_02", n_preferences_observed=12, n_won=6, n_lost=6, n_not_reached=0,
+                avg_overbid_ratio_won=5.0, avg_overbid_ratio_lost=5.0, avg_preference_rank_won=1.0,
+            )
+        }
+        sim_plain = simulate_opponent_competition(target, ruleset, state, conn, events, ["team_02"], pool, seed=3)
+        sim_boosted = simulate_opponent_competition(
+            target, ruleset, state, conn, events, ["team_02"], pool, seed=3, preference_profiles=aggressive_profile,
+        )
+        assert sim_boosted.max_opponent_bid_p90 >= sim_plain.max_opponent_bid_p90
+        assert any("profilo da preferenze" in line for line in sim_boosted.explanation)

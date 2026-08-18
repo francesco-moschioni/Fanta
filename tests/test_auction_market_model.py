@@ -288,3 +288,48 @@ class TestTeamPreferenceProfiles:
         profiles = team_preference_profiles(history, conn)
         assert profiles[0].n_lost == 1
         assert profiles[0].avg_overbid_ratio_lost is None
+
+
+class TestTeamPriceMultiplier:
+    def test_falls_back_to_1_when_no_data(self):
+        from fantacalcio.auction.market_model import team_price_multiplier
+
+        mult, source = team_price_multiplier("team_99", {}, regime_mean_ratio=1.5)
+        assert mult == 1.0
+        assert "nessun dato" in source
+
+    def test_uses_aggressiveness_when_no_preference_profile(self):
+        from fantacalcio.auction.market_model import TeamAggressiveness, team_price_multiplier
+
+        agg = {"team_01": TeamAggressiveness(team_id="team_01", n=10, team_mean_ratio=1.8, delta_vs_market=0.3, reliable=True)}
+        mult, source = team_price_multiplier("team_01", agg, regime_mean_ratio=1.5)
+        assert mult == pytest.approx(1.2)
+        assert "ledger reale" in source
+
+    def test_prefers_preference_profile_when_reliable(self):
+        from fantacalcio.auction.market_model import TeamAggressiveness, TeamPreferenceProfile, team_price_multiplier
+
+        agg = {"team_01": TeamAggressiveness(team_id="team_01", n=10, team_mean_ratio=1.0, delta_vs_market=-0.5, reliable=True)}
+        profiles = {
+            "team_01": TeamPreferenceProfile(
+                team_id="team_01", n_preferences_observed=10, n_won=3, n_lost=3, n_not_reached=4,
+                avg_overbid_ratio_won=2.0, avg_overbid_ratio_lost=2.0, avg_preference_rank_won=1.5,
+            )
+        }
+        mult, source = team_price_multiplier("team_01", agg, regime_mean_ratio=1.0, preference_profiles=profiles)
+        assert mult == pytest.approx(2.0)
+        assert "profilo da preferenze" in source
+
+    def test_falls_back_to_aggressiveness_when_preference_profile_too_thin(self):
+        from fantacalcio.auction.market_model import TeamAggressiveness, TeamPreferenceProfile, team_price_multiplier
+
+        agg = {"team_01": TeamAggressiveness(team_id="team_01", n=10, team_mean_ratio=1.5, delta_vs_market=0.0, reliable=True)}
+        profiles = {
+            "team_01": TeamPreferenceProfile(
+                team_id="team_01", n_preferences_observed=2, n_won=1, n_lost=1, n_not_reached=0,
+                avg_overbid_ratio_won=3.0, avg_overbid_ratio_lost=3.0, avg_preference_rank_won=1.0,
+            )
+        }
+        mult, source = team_price_multiplier("team_01", agg, regime_mean_ratio=1.0, preference_profiles=profiles)
+        assert mult == pytest.approx(1.5)
+        assert "ledger reale" in source

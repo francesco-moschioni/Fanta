@@ -16,10 +16,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pandas as pd
 import streamlit as st
 
 from fantacalcio.auction.g3_envelope_feasibility import check_pick_feasibility, summarize_g3_feasibility
 from fantacalcio.auction.g3_simulation import simulate_opponent_competition, win_probability_for_bid
+from fantacalcio.auction.market_model import team_preference_profiles
 from fantacalcio.config import load_ruleset
 from fantacalcio.persistence.g3_envelopes_store import connect as connect_envelopes, list_picks, remove_pick, save_pick
 from fantacalcio.persistence.ledger_store import connect as connect_ledger, load_current_league_state, load_events
@@ -59,6 +61,23 @@ undrafted_for_sim = all_players_for_sim[
     ~all_players_for_sim["player_code"].astype(str).isin(league_state.assigned_players)
 ]
 
+PREFERENCE_HISTORY_PATH = Path("data/curated/preference_bid_history/preference_bids.csv")
+
+
+@st.cache_data(ttl=600)
+def _load_preference_profiles(_player_conn, csv_mtime: float):
+    """Cached on the CSV's mtime: recomputes only when the curated file
+    actually changes (a fresh ingest run), not on every widget rerun --
+    per-row DB lookups over ~600 rows made this a multi-second cost otherwise."""
+    history = pd.read_csv(PREFERENCE_HISTORY_PATH)
+    return {p.team_id: p for p in team_preference_profiles(history, _player_conn)}
+
+
+preference_profiles = (
+    _load_preference_profiles(player_conn, PREFERENCE_HISTORY_PATH.stat().st_mtime)
+    if PREFERENCE_HISTORY_PATH.is_file() else {}
+)
+
 report = summarize_g3_feasibility(my_team_id, ruleset, league_state, picks)
 
 st.subheader("Fattibilità G3")
@@ -91,6 +110,7 @@ if picks:
         if player_row is not None:
             sim = simulate_opponent_competition(
                 player_row, ruleset, league_state, player_conn, all_events, opponent_ids, undrafted_for_sim,
+                preference_profiles=preference_profiles,
             )
             win_prob = win_probability_for_bid(sim, pick.bid_amount)
             st.caption(
@@ -128,6 +148,7 @@ else:
         if player_row_candidate is not None:
             sim = simulate_opponent_competition(
                 player_row_candidate, ruleset, league_state, player_conn, all_events, opponent_ids, undrafted_for_sim,
+                preference_profiles=preference_profiles,
             )
             win_prob = win_probability_for_bid(sim, int(bid_amount))
             st.info(

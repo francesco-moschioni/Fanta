@@ -565,6 +565,46 @@ def team_preference_profiles(history: pd.DataFrame, player_conn) -> list[TeamPre
     return profiles
 
 
+def team_price_multiplier(
+    team_id: str,
+    aggressiveness: dict[str, TeamAggressiveness],
+    regime_mean_ratio: float | None,
+    preference_profiles: dict[str, TeamPreferenceProfile] | None = None,
+) -> tuple[float, str]:
+    """Best-available per-team price multiplier (relative to the league-wide
+    market regime), for simulating a specific opponent's behaviour
+    (`g3_simulation.py`). Cascades from most to least specific, same principle
+    as `estimate_price_correction`'s role/tier cascade -- never blends two
+    sources into one opaque number, always names which was used:
+
+    1. `preference_profiles[team_id]` (ADR-2026-065): the richest signal, since
+       it includes LOST preferences too, not just wins -- but only trusted with
+       enough observations (>= MIN_SAMPLE_FOR_SPLIT combined won+lost), and only
+       covers the ~80% of teams/rounds resolved during curation.
+    2. `aggressiveness[team_id]` (`team_aggressiveness_index`, ADR-2026-058):
+       ledger-only (wins only), but complete coverage and already reliability-gated.
+    3. `1.0` (no adjustment) when neither has enough data for this team.
+    """
+    profile = (preference_profiles or {}).get(team_id)
+    if profile is not None:
+        n_priced = profile.n_won + profile.n_lost
+        if n_priced >= MIN_SAMPLE_FOR_SPLIT and regime_mean_ratio is not None and regime_mean_ratio > 0:
+            parts = [
+                (profile.n_won, profile.avg_overbid_ratio_won),
+                (profile.n_lost, profile.avg_overbid_ratio_lost),
+            ]
+            weighted = [(n, r) for n, r in parts if r is not None and n > 0]
+            if weighted:
+                blended = sum(n * r for n, r in weighted) / sum(n for n, _ in weighted)
+                return blended / regime_mean_ratio, "profilo da preferenze complete (vinte+perse)"
+
+    team_agg = (aggressiveness or {}).get(team_id)
+    if team_agg is not None and team_agg.reliable and regime_mean_ratio is not None and regime_mean_ratio > 0:
+        return team_agg.team_mean_ratio / regime_mean_ratio, "aggressività da ledger reale (solo vittorie)"
+
+    return 1.0, "nessun dato di stile per questa squadra (nessuna correzione)"
+
+
 def _row_ratio(row: pd.Series, player_conn) -> float | None:
     player_row = _get_player_row(player_conn, str(row["player_code"]))
     if player_row is None:
