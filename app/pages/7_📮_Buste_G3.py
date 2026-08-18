@@ -22,7 +22,7 @@ import streamlit as st
 from fantacalcio.auction.g3_envelope_feasibility import check_pick_feasibility, summarize_g3_feasibility
 from fantacalcio.auction.g3_simulation import simulate_opponent_competition, win_probability_for_bid
 from fantacalcio.auction.market_model import team_preference_profiles
-from fantacalcio.config import load_ruleset
+from fantacalcio.config import ConfigError, load_ruleset
 from fantacalcio.persistence.g3_envelopes_store import connect as connect_envelopes, list_picks, remove_pick, save_pick
 from fantacalcio.persistence.ledger_store import connect as connect_ledger, load_current_league_state, load_events
 from fantacalcio.persistence.player_table import connect as connect_players, get_player, search_players
@@ -78,7 +78,16 @@ preference_profiles = (
     if PREFERENCE_HISTORY_PATH.is_file() else {}
 )
 
-report = summarize_g3_feasibility(my_team_id, ruleset, league_state, picks)
+try:
+    report = summarize_g3_feasibility(my_team_id, ruleset, league_state, picks)
+except ConfigError:
+    st.warning(
+        "G3 non è ancora raggiungibile per questa squadra: nel ledger non risulta ancora nessun evento "
+        "G1/G2 per lei, quindi il budget G3 (che dipende dal residuo di G2) non è calcolabile. Se hai "
+        "appena importato o aggiornato dati reali, verifica di aver ricaricato/riseedato il ledger su "
+        "questa istanza (pagina Squadre, sezione Importa/esporta ledger)."
+    )
+    st.stop()
 
 st.subheader("Fattibilità G3")
 col1, col2, col3 = st.columns(3)

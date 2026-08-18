@@ -22,7 +22,7 @@ from fantacalcio.auction.g2_envelope_feasibility import (
     project_downstream_budget,
     summarize_g2_feasibility,
 )
-from fantacalcio.config import load_ruleset
+from fantacalcio.config import ConfigError, load_ruleset
 from fantacalcio.persistence.g2_envelopes_store import connect as connect_envelopes, list_picks, remove_pick, save_pick
 from fantacalcio.persistence.ledger_store import connect as connect_ledger, load_current_league_state
 from fantacalcio.persistence.player_table import connect as connect_players, get_player, search_players
@@ -61,7 +61,16 @@ st.caption(f"Squadra: **{display_name(my_team_id, get_all_labels(labels_conn))}*
 league_state = load_current_league_state(ledger_conn, ruleset)
 all_picks = list_picks(envelope_conn, my_team_id)
 
-report = summarize_g2_feasibility(my_team_id, ruleset, league_state, all_picks)
+try:
+    report = summarize_g2_feasibility(my_team_id, ruleset, league_state, all_picks)
+except ConfigError:
+    st.warning(
+        "G2 non è ancora raggiungibile per questa squadra: nel ledger non risulta ancora nessun evento "
+        "G1 per lei, quindi il budget G2 (che dipende dal residuo di G1) non è calcolabile. Se hai "
+        "appena importato o aggiornato dati reali, verifica di aver ricaricato/riseedato il ledger su "
+        "questa istanza (pagina Squadre, sezione Importa/esporta ledger)."
+    )
+    st.stop()
 
 st.subheader("Fattibilità G2")
 col1, col2, col3 = st.columns(3)
