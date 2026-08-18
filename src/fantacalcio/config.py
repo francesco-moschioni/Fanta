@@ -37,6 +37,7 @@ class Round:
     budget_increment: int
     budget_available_expr: str
     pools: tuple[str, ...]
+    max_players_this_phase: int | None = None
 
 
 @dataclass(frozen=True)
@@ -175,6 +176,7 @@ def load_ruleset(path: str | Path) -> Ruleset:
                 budget_increment=_require(r, "budget_increment", rpath),
                 budget_available_expr=str(_require(r, "budget_available", rpath)),
                 pools=pools,
+                max_players_this_phase=r.get("max_players_this_phase"),
             )
         )
 

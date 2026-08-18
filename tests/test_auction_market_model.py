@@ -247,3 +247,44 @@ class TestEstimatePriceCorrection:
         assert correction is not None
         assert correction.ratio == pytest.approx(1.5)
         assert "mercato generale" in correction.source or "regime di mercato" in correction.source
+
+
+class TestTeamPreferenceProfiles:
+    def test_computes_per_team_won_lost_not_reached_and_ratios(self, tmp_path):
+        conn = _players_conn(tmp_path, [_row(1, quotazione_asta=10), _row(2, quotazione_asta=20)])
+        history = pd.DataFrame([
+            {"team_id": "team-01", "player_code": 1, "preference_rank": 1, "bid_amount": 15, "outcome": "lost"},
+            {"team_id": "team-01", "player_code": 2, "preference_rank": 2, "bid_amount": 30, "outcome": "won"},
+            {"team_id": "team-01", "player_code": 2, "preference_rank": 3, "bid_amount": 5, "outcome": "not_reached"},
+        ])
+        from fantacalcio.auction.market_model import team_preference_profiles
+
+        profiles = team_preference_profiles(history, conn)
+        assert len(profiles) == 1
+        p = profiles[0]
+        assert p.team_id == "team-01"
+        assert p.n_won == 1 and p.n_lost == 1 and p.n_not_reached == 1
+        assert p.avg_overbid_ratio_lost == pytest.approx(1.5)  # 15/10
+        assert p.avg_overbid_ratio_won == pytest.approx(1.5)  # 30/20
+        assert p.avg_preference_rank_won == pytest.approx(2.0)
+
+    def test_team_absent_from_history_has_no_profile(self, tmp_path):
+        conn = _players_conn(tmp_path, [_row(1)])
+        history = pd.DataFrame([
+            {"team_id": "team-01", "player_code": 1, "preference_rank": 1, "bid_amount": 15, "outcome": "won"},
+        ])
+        from fantacalcio.auction.market_model import team_preference_profiles
+
+        profiles = team_preference_profiles(history, conn)
+        assert all(p.team_id != "team-02" for p in profiles)
+
+    def test_unknown_player_code_excluded_from_ratio_not_crash(self, tmp_path):
+        conn = _players_conn(tmp_path, [_row(1, quotazione_asta=10)])
+        history = pd.DataFrame([
+            {"team_id": "team-01", "player_code": 999, "preference_rank": 1, "bid_amount": 15, "outcome": "lost"},
+        ])
+        from fantacalcio.auction.market_model import team_preference_profiles
+
+        profiles = team_preference_profiles(history, conn)
+        assert profiles[0].n_lost == 1
+        assert profiles[0].avg_overbid_ratio_lost is None

@@ -434,6 +434,8 @@ class PriceCorrection:
     n: int
     reliable: bool
     source: str  # human-readable label of which level was used
+    low_ratio: float  # observed range at the chosen level, for Monte Carlo sampling (g3_simulation.py)
+    high_ratio: float
 
 
 def estimate_price_correction(
@@ -472,7 +474,10 @@ def estimate_price_correction(
             return None
         label, chosen = any_candidates[0]
 
-    return PriceCorrection(ratio=chosen.mean_ratio, n=chosen.n, reliable=chosen.reliable, source=label)
+    return PriceCorrection(
+        ratio=chosen.mean_ratio, n=chosen.n, reliable=chosen.reliable, source=label,
+        low_ratio=chosen.low_ratio, high_ratio=chosen.high_ratio,
+    )
 
 
 @dataclass(frozen=True)
@@ -512,3 +517,59 @@ def opponents_needing_role(
         teams_total=len(opponent_ids),
         avg_budget_per_open_slot=(sum(needing_budgets) / len(needing_budgets)) if needing_budgets else None,
     )
+
+
+@dataclass(frozen=True)
+class TeamPreferenceProfile:
+    """Behavioural profile of one team's sealed-bid strategy, built from the
+    FULL preference history (won/lost/never-reached) -- not just the ledger's
+    winning outcomes. Confirmed with the user 2026-08-18: this is purely a
+    behaviour/strategy signal, never used to infer future demand for a
+    specific player."""
+    team_id: str
+    n_preferences_observed: int
+    n_won: int
+    n_lost: int
+    n_not_reached: int
+    avg_overbid_ratio_won: float | None  # mean(bid_amount / effective_quotazione) on WON preferences
+    avg_overbid_ratio_lost: float | None  # same, on LOST preferences (attempted, didn't win)
+    avg_preference_rank_won: float | None  # how far down its own list a team typically has to go to win (1 = always wins first choice)
+
+
+def team_preference_profiles(history: pd.DataFrame, player_conn) -> list[TeamPreferenceProfile]:
+    """`history` is the curated dataset produced by
+    `scripts/ingest_preference_bid_history.py` (columns: team_id, player_code,
+    preference_rank, bid_amount, outcome). One profile per team present in the
+    data -- a team missing from the source lists (e.g. genuinely not
+    submitted, or excluded by unresolved names) simply doesn't appear, never a
+    fabricated zero-row profile."""
+    profiles = []
+    for team_id, team_rows in history.groupby("team_id"):
+        won = team_rows[team_rows["outcome"] == "won"]
+        lost = team_rows[team_rows["outcome"] == "lost"]
+        not_reached = team_rows[team_rows["outcome"] == "not_reached"]
+
+        won_ratios = [r for r in (_row_ratio(row, player_conn) for _, row in won.iterrows()) if r is not None]
+        lost_ratios = [r for r in (_row_ratio(row, player_conn) for _, row in lost.iterrows()) if r is not None]
+
+        profiles.append(TeamPreferenceProfile(
+            team_id=team_id,
+            n_preferences_observed=len(team_rows),
+            n_won=len(won),
+            n_lost=len(lost),
+            n_not_reached=len(not_reached),
+            avg_overbid_ratio_won=(sum(won_ratios) / len(won_ratios)) if won_ratios else None,
+            avg_overbid_ratio_lost=(sum(lost_ratios) / len(lost_ratios)) if lost_ratios else None,
+            avg_preference_rank_won=(won["preference_rank"].mean()) if len(won) else None,
+        ))
+    return profiles
+
+
+def _row_ratio(row: pd.Series, player_conn) -> float | None:
+    player_row = _get_player_row(player_conn, str(row["player_code"]))
+    if player_row is None:
+        return None
+    quot = effective_quotazione(player_row)
+    if quot is None or quot <= 0:
+        return None
+    return row["bid_amount"] / quot
