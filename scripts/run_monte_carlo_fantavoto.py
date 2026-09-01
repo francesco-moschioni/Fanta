@@ -17,7 +17,9 @@ Report stays local under data/staged/ (gitignored, personal-use-licensed sources
 
 from __future__ import annotations
 
+import argparse
 import json
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -277,6 +279,29 @@ def part_b_application(rated: pd.DataFrame) -> None:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--odds-priors",
+        action="store_true",
+        help=(
+            "Engine v2 Stage 2 (ADR-2026-074): route the team adjustment through "
+            "modeling.odds_priors / scoring.odds_conditioning instead of the scalar "
+            "Dixon-Coles shift. DEFAULT OFF -> output byte-identical to today. The "
+            "2026/27 target season has no priced fixtures, so with this flag the "
+            "application pass logs the degradation and falls back to the scalar "
+            "shift; the odds path is exercised by scripts/run_stage2_odds_backtest.py "
+            "on completed seasons."
+        ),
+    )
+    args = parser.parse_args()
+    if args.odds_priors:
+        logging.basicConfig(level=logging.INFO)
+        logging.getLogger(__name__).warning(
+            "--odds-priors: no market odds exist for the unpriced 2026/27 target "
+            "season; falling back to the scalar Dixon-Coles shift (documented "
+            "degradation, docs/DATA_AND_MODELING.md 'Degradazione controllata')."
+        )
+
     print("Loading voti panel and joining team data...")
     voti = load_player_matchday_panel()
     rated = _join_team_data(voti)

@@ -17,6 +17,8 @@ import pandas as pd
 from fantacalcio.features.schema import LINEAGE_COLUMNS, VALUE_COLUMNS
 from fantacalcio.modeling.dixon_coles import DEFAULT_XI, fit_dixon_coles
 from fantacalcio.modeling.elo import fit_elo_sequential
+from fantacalcio.modeling.odds_priors import DEFAULT_RHO as ODDS_DEFAULT_RHO
+from fantacalcio.modeling.odds_priors import season_team_priors
 from fantacalcio.modeling.participation import (
     SeasonParticipation,
     decayed_participation_estimate,
@@ -312,6 +314,61 @@ def build_team_strength_features(
 
 
 # --------------------------------------------------------------------------- #
+# odds-implied team priors (Stage 2)                                         #
+# --------------------------------------------------------------------------- #
+def build_odds_prior_features(
+    matches: pd.DataFrame,
+    *,
+    season: str,
+    devig_method: str = "shin",
+    rho: float = ODDS_DEFAULT_RHO,
+    fallback_total_goals: float | None = None,
+    source_version: str = "football_data_v1",
+    ingested_time: pd.Timestamp | None = None,
+) -> pd.DataFrame:
+    """Per-team odds-implied clean-sheet / goals-conceded / expected-points priors.
+
+    ``matches`` needs ``HomeTeam, AwayTeam, Date`` and a resolvable 1X2 odds set
+    (``Avg{H,D,A}`` / ``BbAv*`` / ``B365*``); it must hold only the priced season.
+    Calls ``modeling.odds_priors.season_team_priors`` unchanged; ``available_time``
+    is that season's last kickoff (the aggregate is known once the season ends).
+    """
+    priors = season_team_priors(
+        matches, devig_method=devig_method, rho=rho,
+        season_col=None, fallback_total_goals=fallback_total_goals, granularity="season",
+    )
+    feature_map = {
+        "team_odds_clean_sheet_rate": "clean_sheet_rate",
+        "team_odds_expected_goals_conceded": "expected_goals_conceded",
+        "team_odds_expected_points": "expected_points",
+    }
+    records = []
+    for row in priors.itertuples(index=False):
+        for feature_name, col in feature_map.items():
+            records.append(
+                {
+                    "feature_name": feature_name,
+                    "entity_id": str(row.team),
+                    "value": float(getattr(row, col)),
+                    "available_time": row.available_time,
+                }
+            )
+    long_df = pd.DataFrame(records, columns=["feature_name", "entity_id", "value", "available_time"])
+    long_df["entity_type"] = "team"
+    long_df["season"] = season
+    if long_df.empty:
+        long_df["available_time"] = pd.NaT
+    return _finalize(
+        long_df,
+        source_name="football_data_co_uk",
+        source_version=source_version,
+        quality_tier="A",
+        ingested_time=ingested_time,
+        default_available_time=_season_start(season),
+    )
+
+
+# --------------------------------------------------------------------------- #
 # FVM prior buckets                                                          #
 # --------------------------------------------------------------------------- #
 def build_fvm_prior_features(
@@ -425,6 +482,7 @@ def build_all_features(
     season_participation: SeasonParticipation | None = None,
     recency_panel: pd.DataFrame | None = None,
     matches: pd.DataFrame | None = None,
+    odds_matches: pd.DataFrame | None = None,
     fvm_train_by_role: pd.DataFrame | None = None,
     fvm_target_players: pd.DataFrame | None = None,
     listone: pd.DataFrame | None = None,
@@ -449,6 +507,10 @@ def build_all_features(
     if matches is not None:
         out["team_strength"] = build_team_strength_features(
             matches, season=target_season, ingested_time=ingested_time
+        )
+    if odds_matches is not None:
+        out["odds_prior"] = build_odds_prior_features(
+            odds_matches, season=target_season, ingested_time=ingested_time
         )
     if fvm_train_by_role is not None and fvm_target_players is not None:
         out["fvm_prior"] = build_fvm_prior_features(

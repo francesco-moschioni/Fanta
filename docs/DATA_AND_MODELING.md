@@ -72,4 +72,11 @@ Il valore d’asta usa distribuzioni predittive, replacement, scarsità, covaria
 
 ## Degradazione controllata
 
-Senza target Fantacalcio omogeneo: output `proxy fantasy`; senza xG: per-90 shrinkato; senza quote: Elo/Dixon–Coles; senza feed infortuni: stato manuale. La UI espone modulo attivo, timestamp e impatto sulla confidenza.
+Senza target Fantacalcio omogeneo: output `proxy fantasy`; senza xG: per-90 shrinkato; senza feed infortuni: stato manuale. La UI espone modulo attivo, timestamp e impatto sulla confidenza.
+
+Aggiustamento squadra nel Monte Carlo (ADR-2026-074, Engine v2 Stage 2):
+
+- **quote presenti** (football-data.co.uk, stagione già prezzata) → priori da quote: de-vig Shin del mercato medio 1X2 (+ O/U 2.5), inversione supremacy+total su griglia Dixon–Coles con `rho` fisso negativo, marginali clean-sheet / gol subiti dal grid congiunto, condizionamento dell'ensemble bootstrap per reweighting/SIR (`scoring/odds_conditioning.py`). Sostituisce lo shift scalare.
+- **quote assenti** (o stagione non ancora prezzata, es. il numero pre-asta 2026/27) → shift scalare Dixon–Coles come oggi (`scoring/team_strength_adjustment.apply_adjustment`), invariato.
+
+Il path priori-da-quote è **default OFF** finché non supera il ship gate OOS (batte lo shift scalare su CRPS_fair per P/D e sul Brier clean-sheet nel walk-forward rolling-origin, senza regressione PIT).

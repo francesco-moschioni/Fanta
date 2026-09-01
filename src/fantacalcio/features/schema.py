@@ -153,6 +153,31 @@ FEATURE_REGISTRY: dict[str, FeatureSpec] = dict(
             "season boundary (matches strictly before it)",
             "A",
         ),
+        # --- odds-implied team priors (modeling.odds_priors, Stage 2) --------
+        _spec(
+            "team_odds_clean_sheet_rate",
+            "float64",
+            "Mean odds-implied clean-sheet probability across the season's priced fixtures.",
+            "football_data_co_uk",
+            "season boundary (last kickoff of the priced season) for the aggregate; match kickoff per fixture",
+            "A",
+        ),
+        _spec(
+            "team_odds_expected_goals_conceded",
+            "float64",
+            "Mean odds-implied expected goals conceded across the season's priced fixtures.",
+            "football_data_co_uk",
+            "season boundary (last kickoff of the priced season) for the aggregate; match kickoff per fixture",
+            "A",
+        ),
+        _spec(
+            "team_odds_expected_points",
+            "float64",
+            "Mean odds-implied expected league points across the season's priced fixtures.",
+            "football_data_co_uk",
+            "season boundary (last kickoff of the priced season) for the aggregate; match kickoff per fixture",
+            "A",
+        ),
         # --- FVM prior (scoring.fvm_prior) -----------------------------------
         _spec(
             "fvm_bucket",

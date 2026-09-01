@@ -143,7 +143,8 @@ def simulate_fantavoto(
     prior_games: float = DEFAULT_PRIOR_GAMES,
     rng: np.random.Generator | None = None,
     use_recency_weights: bool = False,
-) -> SimulationResult:
+    collect_rows: bool = False,
+) -> SimulationResult | tuple[SimulationResult, list[HistoricalRow]]:
     """`use_recency_weights=False` (default) samples uniformly within each pool --
     the pre-block-4 behavior, kept exact so blocks 1-2's validated results stay
     reproducible. Set True to sample proportional to each row's `recency_weight`
@@ -161,20 +162,25 @@ def simulate_fantavoto(
 
     draws_from_own = rng.random(n_sims) < weight_own
     samples = np.empty(n_sims, dtype=float)
+    drawn_rows: list[HistoricalRow | None] = [None] * n_sims if collect_rows else []
 
     n_own_draws = int(draws_from_own.sum())
     if n_own_draws > 0:
         idx = _sample_pool_indices(own_pool, n_own_draws, rng, use_recency_weights)
         for i, pool_idx in zip(np.where(draws_from_own)[0], idx):
             samples[i] = score_fantavoto(own_pool[pool_idx].voto, _row_to_events(own_pool[pool_idx], role))
+            if collect_rows:
+                drawn_rows[i] = own_pool[pool_idx]
 
     n_role_draws = n_sims - n_own_draws
     if n_role_draws > 0:
         idx = _sample_pool_indices(role_pool, n_role_draws, rng, use_recency_weights)
         for i, pool_idx in zip(np.where(~draws_from_own)[0], idx):
             samples[i] = score_fantavoto(role_pool[pool_idx].voto, _row_to_events(role_pool[pool_idx], role))
+            if collect_rows:
+                drawn_rows[i] = role_pool[pool_idx]
 
-    return SimulationResult(
+    result = SimulationResult(
         player_code=player_code,
         role=role,
         n_sims=n_sims,
@@ -182,6 +188,9 @@ def simulate_fantavoto(
         used_role_pool_only=(n == 0),
         samples=samples,
     )
+    if collect_rows:
+        return result, drawn_rows  # type: ignore[return-value]
+    return result
 
 
 def load_calibration_meta(path: Path = DEFAULT_CALIBRATION_META_PATH) -> dict | None:

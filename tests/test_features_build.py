@@ -169,8 +169,78 @@ def test_build_all_features_dispatch():
         season_participation=compute_season_participation(panel),
         recency_panel=panel,
         matches=_matches(),
+        odds_matches=_odds_matches(),
         target_season="2026_27",
     )
-    assert set(out) == {"player_voto", "participation", "recency_weight", "team_strength"}
+    assert set(out) == {
+        "player_voto", "participation", "recency_weight", "team_strength", "odds_prior",
+    }
     for df in out.values():
         _assert_valid(df)
+
+
+# --------------------------------------------------------------------------- #
+# odds-implied team priors (Stage 2)                                         #
+# --------------------------------------------------------------------------- #
+def _odds_matches() -> pd.DataFrame:
+    teams = ["Alpha", "Beta", "Gamma", "Delta"]
+    rows = []
+    base = pd.Timestamp("2025-08-24")
+    n = 0
+    for i, h in enumerate(teams):
+        for j, a in enumerate(teams):
+            if i == j:
+                continue
+            rows.append(
+                {
+                    "Date": base + pd.Timedelta(days=7 * n),
+                    "Time": "20:45",
+                    "HomeTeam": h,
+                    "AwayTeam": a,
+                    "FTHG": 1 + (n % 2),
+                    "FTAG": 1,
+                    "AvgH": 2.0 + 0.25 * i,
+                    "AvgD": 3.3,
+                    "AvgA": 3.8 - 0.15 * j,
+                }
+            )
+            n += 1
+    return pd.DataFrame(rows)
+
+
+def test_odds_prior_builder_valid():
+    from fantacalcio.features.build import build_odds_prior_features
+
+    feats = build_odds_prior_features(_odds_matches(), season="2025_26")
+    _assert_valid(feats)
+    assert set(feats["feature_name"]) == {
+        "team_odds_clean_sheet_rate",
+        "team_odds_expected_goals_conceded",
+        "team_odds_expected_points",
+    }
+    assert feats["entity_type"].eq("team").all()
+    assert feats["quality_tier"].eq("A").all()
+
+
+def test_odds_prior_per_match_rows_pass_leakage_check():
+    from fantacalcio.features.leakage import assert_available_before_decision
+    from fantacalcio.modeling.odds_priors import season_team_priors
+
+    matches = _odds_matches()
+    detail = season_team_priors(matches, season_col=None, granularity="match")
+    decision_time = matches["Date"].max() + pd.Timedelta(days=1)
+    # every priced-fixture prior is known strictly before a post-season decision
+    assert_available_before_decision(
+        detail.rename(columns={"team": "entity_id"}).assign(
+            entity_type="team", feature_name="team_odds_clean_sheet_rate"
+        ),
+        decision_time,
+    )
+    # and it fails for a decision time before the first kickoff
+    with pytest.raises(Exception):
+        assert_available_before_decision(
+            detail.rename(columns={"team": "entity_id"}).assign(
+                entity_type="team", feature_name="team_odds_clean_sheet_rate"
+            ),
+            matches["Date"].min() - pd.Timedelta(days=1),
+        )

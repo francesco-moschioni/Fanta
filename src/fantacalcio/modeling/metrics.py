@@ -18,6 +18,8 @@ from scipy.stats import spearmanr
 
 __all__ = [
     "crps_ensemble",
+    "crps_fair",
+    "rank_histogram",
     "pit_values",
     "coverage",
     "brier",
@@ -51,6 +53,43 @@ def crps_ensemble(samples: np.ndarray, observed: float) -> float:
     term_accuracy = float(np.mean(np.abs(s - observed)))
     term_spread = float(np.mean(np.abs(s[:, None] - s[None, :])))
     return term_accuracy - 0.5 * term_spread
+
+
+def crps_fair(samples: np.ndarray, observed: float) -> float:
+    """Unbiased ("fair"/PWM) ensemble CRPS estimator (Zamo & Naveau 2018).
+
+    Same as :func:`crps_ensemble` but the spread term divides the double sum by
+    ``m (m - 1)`` instead of ``m^2``, removing the order-``1/m`` under-dispersion
+    bias. Requires at least 2 members. Prefer this for backtest arm comparison
+    (priorart §5a); keep ``m`` fixed across the arms being compared.
+    """
+    s = np.asarray(samples, dtype=float).ravel()
+    m = s.size
+    if m < 2:
+        raise ValueError("crps_fair: need at least 2 ensemble members")
+    term_accuracy = float(np.mean(np.abs(s - observed)))
+    term_spread = float(np.sum(np.abs(s[:, None] - s[None, :]))) / (m * (m - 1))
+    return term_accuracy - 0.5 * term_spread
+
+
+def rank_histogram(samples_2d: np.ndarray, observed_1d: np.ndarray, n_bins: int | None = None) -> np.ndarray:
+    """Verification-rank (Talagrand) histogram counts.
+
+    For each row, the rank of the observation among the ``m`` ensemble members
+    (0..m) is binned. A calibrated ensemble gives a flat histogram; U-shaped =
+    under-dispersed, dome = over-dispersed, sloped = biased. Returns raw counts
+    of length ``m + 1`` (or ``n_bins`` if given).
+    """
+    s = np.asarray(samples_2d, dtype=float)
+    o = np.asarray(observed_1d, dtype=float)
+    if s.ndim != 2:
+        raise ValueError("rank_histogram: samples_2d must be 2-D (n_rows, n_samples)")
+    if o.shape[0] != s.shape[0]:
+        raise ValueError("rank_histogram: observed_1d length must match samples_2d rows")
+    m = s.shape[1]
+    ranks = np.sum(s < o[:, None], axis=1)
+    bins = (m + 1) if n_bins is None else n_bins
+    return np.bincount(np.clip(ranks, 0, bins - 1), minlength=bins).astype(float)
 
 
 def pit_values(samples_2d: np.ndarray, observed_1d: np.ndarray) -> np.ndarray:
