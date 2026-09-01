@@ -72,7 +72,14 @@ Il valore d’asta usa distribuzioni predittive, replacement, scarsità, covaria
 
 ## Degradazione controllata
 
-Senza target Fantacalcio omogeneo: output `proxy fantasy`; senza xG: per-90 shrinkato; senza feed infortuni: stato manuale. La UI espone modulo attivo, timestamp e impatto sulla confidenza.
+Senza target Fantacalcio omogeneo: output `proxy fantasy`; xG da import manuale Understat quando presente (ADR-2026-075: per-90 shrinkato + propensione gol/assist nel Monte Carlo via `scoring/xg_propensity.py`), altrimenti per-90 shrinkato senza xG; senza feed infortuni: stato manuale. La UI espone modulo attivo, timestamp e impatto sulla confidenza.
+
+xG nel Monte Carlo (ADR-2026-075, Engine v2 Stage 3, **default OFF**):
+
+- **Understat presente** (import manuale, `data/staged/understat/`) → il tasso gol/assist realizzato storico viene fuso col tasso implicito da xG/xA con lo stesso `w = n/(n+prior)` usato ovunque, poi resample SIR dell'ensemble bootstrap (`scoring/odds_conditioning` pattern). Colonna di provenienza `xg_data_present` nell'output.
+- **Understat assente** → peso 0 sul termine xG → output **bit-identico** allo Stage 2 (contratto di degradazione controllata).
+
+Gate deferito: non eseguibile ora senza export Understat reali; il wiring è spedito absent-safe e resta OFF finché un backtest non mostra che batte il no-xG su CRPS gol/assist A/C.
 
 Aggiustamento squadra nel Monte Carlo (ADR-2026-074, Engine v2 Stage 2):
 

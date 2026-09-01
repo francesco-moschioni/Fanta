@@ -39,6 +39,25 @@ Confine tecnico (contiene il rischio, rende la fonte sostituibile):
 
 Template per fonte (da completare al primo import reale): URL, campi, ufficialità, metodo accesso (manuale), evidenza ToS/robots (archiviata), data verifica, refresh (manuale on-demand), raw snapshot (locale, non committato), mapping ID (via `identity/player_name_resolver.py`, ambigui in coda), fallback (assenza → degradazione al comportamento pre-override), coverage nota (Understat non copre l'intera rosa), errori osservati, stato.
 
+### Understat — riga template (parser committato, primo import reale ancora da fare)
+
+| Voce | Valore |
+|---|---|
+| URL | `https://understat.com/league/Serie_A/<anno>` (aggregati stagione), `https://understat.com/player/<id>` (tiri) |
+| Campi | `games, time (minuti), goals, xG, assists, xA, shots, key_passes, npg, npxG, xGChain, xGBuildup`; tiri: `minute, X, Y, xG, result, situation, shotType, player, player_assisted` |
+| Ufficialità | non ufficiale; modello xG proprietario Understat |
+| Metodo accesso | **manuale**: pagina salvata a mano dal browser dell'owner; parsing offline con `ingest/understat.py` (puro, zero HTTP). Fetch opzionale via script standalone `ingest/understat_fetch.py` (rate-limit ≥5 s, cache, mai in pipeline/CI). |
+| ToS/robots | `robots.txt: Disallow: /` — riconosciuto, non aggirato in automatico; deroga uso personale ADR-2026-070 |
+| Data verifica robots | 2026-09-01 (ADR-2026-070) |
+| Refresh | manuale on-demand |
+| Raw snapshot | locale in `data/raw/understat/` (gitignored), immutabile+checksummed via `ingest/snapshot.write_snapshot` |
+| Mapping ID | `identity/player_name_resolver.resolve_against_anchor` role-constrained; ambigui/omonimi stesso ruolo → coda review, mai `player_code` inventato |
+| Fallback | assenza xG → `scoring/xg_propensity` peso 0 → Monte Carlo bit-identico allo Stage 2 |
+| Coverage | Understat non copre l'intera rosa (portieri e riserve spesso assenti) |
+| Errori osservati | nessuno (nessun export reale ancora processato; parser difensivo, assunzioni sul formato JSON incorporato documentate nel docstring di `ingest/understat.py`) |
+| Stato | parser + feature + wiring MC spediti **absent-safe, default OFF** (ADR-2026-075); in attesa del primo export reale per il gate |
+| Feature prodotte | `xg_per90_shrunk, npxg_per90_shrunk, xa_per90_shrunk, shots_per90_shrunk, minutes_understat, xg_overperformance_shrunk` (tier C, `features/xg_features.py`) |
+
 ## Gerarchia per campo
 
 | Campo | Fonte prevalente |

@@ -30,7 +30,10 @@ from fantacalcio.modeling.time_decay import (
     add_global_matchday_index,
     add_recency_weight,
 )
+from fantacalcio.features.xg_features import build_xg_features
 from fantacalcio.scoring.fvm_prior import assign_bucket, fit_fvm_bucket_edges
+
+__all__ = ["build_xg_features"]  # re-exported; real logic in features.xg_features
 
 _OUTPUT_COLUMNS = VALUE_COLUMNS + LINEAGE_COLUMNS
 
@@ -487,6 +490,8 @@ def build_all_features(
     fvm_target_players: pd.DataFrame | None = None,
     listone: pd.DataFrame | None = None,
     admin_ranks: pd.DataFrame | None = None,
+    understat_season: pd.DataFrame | None = None,
+    understat_anchor_players: pd.DataFrame | None = None,
     target_season: str = "2026_27",
     ingested_time: pd.Timestamp | None = None,
 ) -> dict[str, pd.DataFrame]:
@@ -523,4 +528,9 @@ def build_all_features(
         out["listone"] = build_listone_features(
             listone, admin_ranks, target_season=target_season, ingested_time=ingested_time
         )
+    if understat_season is not None and understat_anchor_players is not None:
+        xg_frame, _review_queue = build_xg_features(
+            understat_season, understat_anchor_players, ingested_time=ingested_time
+        )
+        out["xg"] = xg_frame
     return out

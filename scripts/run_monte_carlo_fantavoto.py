@@ -26,6 +26,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from fantacalcio.features.xg_features import build_xg_features
 from fantacalcio.modeling.dixon_coles import fit_dixon_coles
 from fantacalcio.modeling.player_voto import load_player_matchday_panel
 from fantacalcio.modeling.team_matchday import build_all_seasons
@@ -36,6 +37,7 @@ from fantacalcio.scoring.fvm_prior import (
     load_fvm_lookup,
 )
 from fantacalcio.scoring.monte_carlo import DEFAULT_PRIOR_GAMES, build_event_pools, simulate_fantavoto
+from fantacalcio.scoring.xg_propensity import adjust_event_propensity
 from fantacalcio.scoring.team_strength_adjustment import (
     apply_adjustment,
     compute_adjustments,
@@ -66,6 +68,39 @@ TEAM_STRENGTH_K = 0.5
 # ADR-2026-024.
 LOW_HISTORY_GAMES = 10
 FVM_N_BUCKETS = 4
+
+
+UNDERSTAT_STAGED_DIR = Path("data/staged/understat")
+XG_SCORING_ROLES = {"A", "C"}
+
+
+def _load_xg_rates(listone: pd.DataFrame) -> dict[int, tuple[float, float]]:
+    """player_code -> (xg_goal_rate, xg_assist_rate) from staged Understat data.
+
+    Absent-safe: returns {} when no Understat data has been ingested. The per-90
+    shrunk xG / xA are used directly as per-appearance goal / assist rate proxies
+    (an appearance is ~90 minutes) -- a documented Stage 3 approximation.
+    """
+    if not UNDERSTAT_STAGED_DIR.is_dir():
+        return {}
+    files = sorted(UNDERSTAT_STAGED_DIR.glob("understat_player_season_*.csv"))
+    if not files:
+        return {}
+    frame = pd.concat([pd.read_csv(f) for f in files], ignore_index=True)
+    anchors = listone[["player_code", "display_name", "role"]].copy()
+    long_df, _review = build_xg_features(frame, anchors)
+    if long_df.empty:
+        return {}
+    piv = long_df.pivot_table(
+        index="entity_id", columns="feature_name", values="value", aggfunc="last"
+    )
+    out: dict[int, tuple[float, float]] = {}
+    for eid, prow in piv.iterrows():
+        gr = float(prow.get("xg_per90_shrunk", float("nan")))
+        ar = float(prow.get("xa_per90_shrunk", float("nan")))
+        if gr == gr:  # not NaN
+            out[int(eid)] = (gr, ar if ar == ar else 0.0)
+    return out
 
 
 def _join_team_data(voti: pd.DataFrame) -> pd.DataFrame:
@@ -181,12 +216,17 @@ def part_a_validation(rated: pd.DataFrame) -> None:
     return coverage
 
 
-def part_b_application(rated: pd.DataFrame) -> None:
+def part_b_application(rated: pd.DataFrame, *, use_xg: bool = False) -> None:
     print("\n=== Part B: apply to real 2026/27 roster ===")
     player_pools, role_pools = build_event_pools(rated)  # all 5 seasons
 
     listone = pd.read_csv(QUOTAZIONI_DIR / "2026_27.csv")
     rng = np.random.default_rng(SEED)
+
+    xg_rates = _load_xg_rates(listone) if use_xg else {}
+    if use_xg:
+        print(f"--xg: Understat rates loaded for {len(xg_rates)} player(s) "
+              f"({'no staged Understat data -> no-op' if not xg_rates else 'A/C goal/assist propensity routed through xg_propensity'}).")
 
     print("Fitting Dixon-Coles on all seasons for team-strength adjustment (ADR-2026-023)...")
     fd_all = pd.concat(
@@ -218,7 +258,24 @@ def part_b_application(rated: pd.DataFrame) -> None:
             if fvm_pool:
                 use_role_pools = dict(role_pools)
                 use_role_pools[r.role] = fvm_pool
-        result = simulate_fantavoto(player_code, r.role, player_pools, use_role_pools, n_sims=N_SIMS, rng=rng)
+        xg_present = use_xg and player_code in xg_rates
+        if xg_present and r.role in XG_SCORING_ROLES:
+            result, drawn = simulate_fantavoto(
+                player_code, r.role, player_pools, use_role_pools,
+                n_sims=N_SIMS, rng=rng, collect_rows=True,
+            )
+            drawn_real = [row for row in drawn if row is not None]
+            hist_goal = float(np.mean([row.goals_scored for row in drawn_real])) if drawn_real else 0.0
+            hist_assist = float(np.mean([row.assists for row in drawn_real])) if drawn_real else 0.0
+            xg_goal_rate, xg_assist_rate = xg_rates[player_code]
+            result = adjust_event_propensity(
+                result, historical_rows=drawn,
+                xg_goal_rate=xg_goal_rate, xg_assist_rate=xg_assist_rate,
+                role=r.role, hist_goal_rate=hist_goal, hist_assist_rate=hist_assist,
+                rng=rng,
+            )
+        else:
+            result = simulate_fantavoto(player_code, r.role, player_pools, use_role_pools, n_sims=N_SIMS, rng=rng)
         adj = adjustments.get(r.player_code, 0.0)
         if adj != 0.0:
             result = apply_adjustment(result, adj)
@@ -229,6 +286,7 @@ def part_b_application(rated: pd.DataFrame) -> None:
                 "role": r.role,
                 "team_name": r.team_name,
                 "quotazione_asta": r.quotazione_asta_classic,
+                "xg_data_present": bool(xg_present),
                 "sim_mean": round(result.mean, 3),
                 "sim_median": round(result.median, 3),
                 "sim_p10": round(result.p10, 3),
@@ -293,6 +351,17 @@ def main() -> None:
             "on completed seasons."
         ),
     )
+    parser.add_argument(
+        "--xg",
+        action="store_true",
+        help=(
+            "Engine v2 Stage 3 (ADR-2026-075): when staged Understat data is present "
+            "(data/staged/understat/), route A/C goal/assist propensity through "
+            "scoring.xg_propensity (xG/xA blended into the bootstrap via n/(n+prior) "
+            "shrinkage + SIR resample). DEFAULT OFF. Absent Understat data -> no-op. "
+            "A provenance column 'xg_data_present' is always written."
+        ),
+    )
     args = parser.parse_args()
     if args.odds_priors:
         logging.basicConfig(level=logging.INFO)
@@ -307,7 +376,7 @@ def main() -> None:
     rated = _join_team_data(voti)
 
     part_a_validation(rated)
-    part_b_application(rated)
+    part_b_application(rated, use_xg=args.xg)
 
 
 if __name__ == "__main__":

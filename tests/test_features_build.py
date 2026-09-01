@@ -208,6 +208,40 @@ def _odds_matches() -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def _understat_season() -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "understat_player_name": ["Rossi", "Bianchi"],
+            "understat_role": ["A", "C"],
+            "season_label": ["2023_24", "2023_24"],
+            "goals": [12, 3],
+            "xG": [10.5, 2.5],
+            "assists": [5, 9],
+            "xA": [4.2, 7.5],
+            "npxG": [8.1, 2.0],
+            "shots": [60, 25],
+            "minutes": [2500, 2600],
+        }
+    )
+
+
+def _xg_anchors() -> pd.DataFrame:
+    return pd.DataFrame(
+        {"player_code": [101, 102], "display_name": ["Rossi", "Bianchi"], "role": ["A", "C"]}
+    )
+
+
+def test_build_all_features_dispatch_includes_xg():
+    out = build_all_features(
+        understat_season=_understat_season(),
+        understat_anchor_players=_xg_anchors(),
+        target_season="2026_27",
+    )
+    assert "xg" in out
+    _assert_valid(out["xg"])
+    assert out["xg"]["quality_tier"].eq("C").all()
+
+
 def test_odds_prior_builder_valid():
     from fantacalcio.features.build import build_odds_prior_features
 

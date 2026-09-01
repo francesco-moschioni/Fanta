@@ -244,6 +244,55 @@ FEATURE_REGISTRY: dict[str, FeatureSpec] = dict(
             "admin list publication",
             "A",
         ),
+        # --- xG/xA per-90 (ingest.understat, Stage 3) -----------------------
+        _spec(
+            "xg_per90_shrunk",
+            "float64",
+            "Empirical-Bayes shrunk per-90 expected goals from manually-imported Understat season aggregates.",
+            "understat",
+            "end of the Understat season the aggregate covers (30 June of the following year)",
+            "C",
+        ),
+        _spec(
+            "npxg_per90_shrunk",
+            "float64",
+            "Shrunk per-90 non-penalty expected goals (Understat).",
+            "understat",
+            "end of the Understat season the aggregate covers",
+            "C",
+        ),
+        _spec(
+            "xa_per90_shrunk",
+            "float64",
+            "Shrunk per-90 expected assists (Understat).",
+            "understat",
+            "end of the Understat season the aggregate covers",
+            "C",
+        ),
+        _spec(
+            "shots_per90_shrunk",
+            "float64",
+            "Shrunk per-90 shot count (Understat).",
+            "understat",
+            "end of the Understat season the aggregate covers",
+            "C",
+        ),
+        _spec(
+            "minutes_understat",
+            "float64",
+            "Total minutes played in the Understat season aggregate (unshrunk, provenance/coverage signal).",
+            "understat",
+            "end of the Understat season the aggregate covers",
+            "C",
+        ),
+        _spec(
+            "xg_overperformance_shrunk",
+            "float64",
+            "Per-90 (goals - xG), shrunk heavily toward zero (finishing over/under-performance).",
+            "understat",
+            "end of the Understat season the aggregate covers",
+            "C",
+        ),
     ]
 )
 
