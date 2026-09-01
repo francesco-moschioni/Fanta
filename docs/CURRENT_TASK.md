@@ -2,6 +2,33 @@
 
 Compilare prima di ogni modifica significativa e mantenere lo scope a una singola unità verificabile.
 
+- Obiettivo: **Asta di riparazione inizio settembre 2026 — dati + strumento.** Due parti:
+  1. **[FATTA] Refresh listone fine mercato** (ADR-2026-072): ingerito `Quotazioni_Fantacalcio_Stagione_2026_27.xlsx` (531 giocatori, +81/−48 vs pre-mercato), rigenerata la catena MC → m3 → player table. DuckDB rigenerato e committato. 473 test verdi.
+  2. **[IN CORSO] Riconciliazione rose reali + G3/G4 nel ledger, poi vista riparazione.** L'utente ha fornito `20lega-rosters-*.xlsx` (stato rose pre-riparazione dalla piattaforma lega): 20 squadre, 23 giocatori ciascuna, 460 righe (giocatore + costo). Il ledger contiene solo G1+G2 (218 assegnazioni) — **G3/G4 non sono mai stati importati**, quindi il roster file è l'unica fonte per ~242 assegnazioni G3/G4/post-asta. Marker `*` nel file = giocatore ceduto all'estero/fuori Serie A (confermato dall'utente; ~24 in lega, coincidono col foglio `Ceduti` del listone). Mappa nome-squadra → `team_id`: 19/20 esatte contro `ledger.sqlite3::team_labels`, la 20ª (`team_05` label "Werder Bremer" vs roster "I Have a N'Drim") per eliminazione — **da confermare**. La squadra dell'utente è `team_01` = "Garlascow Rangers" (confermato).
+- Approccio deciso con l'utente:
+  - Integrare G3/G4 come **eventi `AssignmentEvent` nel ledger** (batch marcato `source="lega_roster_export_import"`), replayable, sul modello di `scripts/import_g2_results.py`. NON uno snapshot separato.
+  - Risoluzione identità dei ~460 nomi via `identity/player_name_resolver.py` (vincolo di ruolo, auto ≥0.90, ambigui in coda review, mai `player_code` inventati). Nessun omonimo cross-squadra nel file (verificato: 0 nomi posseduti da >1 squadra).
+  - Riparazione = stesse regole di G3/G4 (`sealed_bid_free`, minimo = quotazione giocatore) **più un meccanismo di svincolo**: le squadre possono liberare un numero di giocatori dalle fasi precedenti e recuperarne i crediti.
+- Gap di regolamento aperti (NON indovinati, `CLAUDE.md`) — da confermare con l'admin lega:
+  1. **Budget totale di lega / come si calcola il residuo per la riparazione.** I `totale` per squadra nel roster file (spesa) sono ~345–369; il residuo dipende dal budget totale (200+100+40+G4? oppure 500 fisso?).
+  2. **Numero massimo di giocatori svincolabili in riparazione** e se i crediti recuperati sono la quotazione pagata o la quotazione corrente.
+  Entrambi vanno in `config/auction_rules.v1.yaml` (`uncertain_historical_fields` o nuova sezione `repair_auction`) e nessun ramo di codice che li richiede deve indovinare.
+- File probabilmente coinvolti: `scripts/import_lega_rosters.py` (nuovo, dry-run default + `--yes`), `src/fantacalcio/ingest/lega_rosters.py` (parser griglia), riuso `identity/player_name_resolver.py`, `persistence/team_labels_store.py`, `persistence/ledger_store.py`, `domain.py` (`replay` per validazione), `config/auction_rules.v1.yaml` (sezione riparazione), eventualmente nuova pagina `app/pages/8_*_Riparazione.py`.
+- Criteri di accettazione: dry-run risolve tutti i 460 nomi (ambigui elencati esplicitamente, mai forzati); il delta ledger↔roster per squadra torna (ledger G1+G2 ⊂ roster file); `replay()` valida ogni evento nuovo senza `DomainError`; budget conservato; con `--yes` il ledger passa da 200 a ~200+242 eventi, riproducibile; i 473 test passano + nuovi test su parser e riconciliazione; verificato in browser che rose e residui compaiano corretti.
+- Comandi test/quality: `pytest -q`.
+- Seed: non applicabile (nessun campionamento).
+- Delegazione: consentita per parser + test; vietata ogni scelta di regolamento o identità ambigua.
+- Decisioni aperte/blocchi: i 2 gap di regolamento sopra bloccano il calcolo dei residui e la config riparazione, NON la riconciliazione delle rose nel ledger (quella si può fare subito).
+
+## Progresso
+
+- Parte 1 (refresh listone): **fatta**, ADR-2026-072, DuckDB committato.
+- Parte 2: parser roster + dry-run in costruzione. Mappa team_id pronta (19 esatte + 1 da confermare). Nessun evento scritto sul ledger finché il dry-run non è validato e l'utente non conferma la mappa team_05.
+
+---
+
+## Task precedente (archiviata)
+
 - Obiettivo (due filoni in parallelo, richiesti insieme dall'utente):
   1. **Ingest risultati reali G2 + liste di preferenza complete (incluse le offerte fallite)**: l'utente ha caricato `Riepilogo secondo giro asta.xlsx` (recap admin cumulativo G1+G2, 9 coppie giocatore/costo per squadra: col.1 blocco portieri G1 già a ledger, col.2-4 i 3 difensori G1 già a ledger, col.5-7 le 3 fasce centrocampisti G2 nuove, col.8-9 le 2 fasce attaccanti G2 nuove — colore giallo/viola = assegnazione automatica admin, confermato dall'utente, trattata come vinta al pari di verde/ciano) e le 9 "Lista N - ... (Risposte).xlsx" (una riga per squadra con le 6 preferenze reali per fascia, colorate verde=vinta/rosso=tentata e persa/arancione=mai valutata). Obiettivo: (a) scrivere sul ledger reale i soli eventi G2 nuovi (le colonne già coperte da G1 vanno saltate, sono già eventi nel ledger da ADR-2026-055); (b) usare le liste complete (comprese le offerte perse) per modellare meglio il comportamento delle squadre avversarie in `market_model.py` — quanto sopra la propria quotazione/minimo una squadra è disposta a spingersi prima di perdere, quante preferenze "brucia" — per inferire strategia/aggressività reale, non i soli esiti finali.
   2. **Interfaccia per G3 (fase finale a busta chiusa, senza liste)**: G3 è già in `config/auction_rules.v1.yaml` (`sealed_bid_free`, pool `remaining_players`, `max_players_this_phase: 6`, `minimum_bid_source: player_quotazione`, `resolution_priority: highest_bid`) ma non ha ancora una pagina app. A differenza di G2 (buste a fasce, preferenza-poi-offerta, si vince al più 1 per fascia), in G3 non ci sono liste/fasce: si scelgono fino a 6 giocatori liberi qualsiasi con un'offerta secca ciascuno, e si può potenzialmente vincerli tutti e 6 (nessun cap "1 per gruppo" come in G2) — il caso peggiore di spesa è quindi la SOMMA delle 6 offerte, non il massimo. Dopo G3/G4 l'admin assegna manualmente il resto (`post_auction_completion`, non un'asta).
