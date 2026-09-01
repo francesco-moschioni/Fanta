@@ -22,8 +22,9 @@ Compilare prima di ogni modifica significativa e mantenere lo scope a una singol
 
 ## Progresso
 
-- Stage 0: **fatto**. Branch `feature/engine-v2`; ADR-2026-070 (ombrello) appeso a `docs/DECISIONS.md`; `docs/ROADMAP.md` §M7 aggiunto; `docs/SOURCE_REGISTER.md` sezione "Override d'uso personale"; `.mcp.json`/`.mcp.local.json` gitignored + nota setup in `README_SETUP.md` §5b; `numpy>=1.26` esplicito in `pyproject.toml`/`requirements.txt` + extra `ml`/`solver`; `data/features/` e `data/models/` in `.gitignore`. Test Stage 0 da aggiungere (`tests/test_mcp_config.py`, `tests/test_project_metadata.py`).
-- Stage 1: in corso.
+- Stage 0: **fatto** (commit `e78cc80`). Branch `feature/engine-v2`; ADR-2026-070 (ombrello); `docs/ROADMAP.md` §M7; `docs/SOURCE_REGISTER.md` sezione "Override d'uso personale"; `.mcp.json`/`.mcp.local.json` gitignored + nota setup in `README_SETUP.md` §5b; `numpy>=1.26` esplicito + extra `ml`/`solver`; `data/features/` e `data/models/` in `.gitignore`; `tests/test_mcp_config.py`, `tests/test_project_metadata.py`. 480 test.
+- Stage 1: **fatto**. ADR-2026-071. `src/fantacalcio/features/` (`schema.py` con `FEATURE_REGISTRY` di 18 feature + `validate_feature_frame`; `store.py` write/read parquet via DuckDB con `as_of`; `leakage.py`; `build.py` con 6 builder che chiamano i moduli esistenti); `modeling/metrics.py` (CRPS/PIT/coverage/Brier/log-loss/NDCG/MAE/RMSE/Spearman) + shim `log_loss` in `validation.py`; `scripts/build_features.py`. 45 nuovi test, **518 totali passano**. `scripts/build_features.py` verificato end-to-end: 6 dataset parquet in `data/features/` (player_voto 177.918 righe, participation 4.221, recency_weight 59.306, team_strength 81, fvm_prior 1.494, listone 1.806). Nessun path a valle toccato.
+- Prossimo: Stage 2 (priori da quote nel Monte Carlo) — preceduto da prior-art scan `docs/research/priorart_stage2.md`.
 
 ---
 

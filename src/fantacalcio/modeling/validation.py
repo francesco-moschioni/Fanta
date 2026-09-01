@@ -12,6 +12,11 @@ from pathlib import Path
 
 import pandas as pd
 
+# Re-exported for backwards compatibility: the implementation now lives in
+# `fantacalcio.modeling.metrics`. Existing imports of `log_loss` from this
+# module keep working unchanged.
+from fantacalcio.modeling.metrics import log_loss  # noqa: F401
+
 SEASON_ORDER = ["2122", "2223", "2324", "2425", "2526"]
 
 
@@ -69,16 +74,6 @@ def assert_no_leakage(train: pd.DataFrame, test: pd.DataFrame) -> None:
             f"Leakage: latest training match ({max_train_date.date()}) is not strictly "
             f"before the earliest test match ({min_test_date.date()})"
         )
-
-
-def log_loss(y_true_index: list[int], probs: list[tuple[float, float, float]], eps: float = 1e-12) -> float:
-    """Multinomial log loss. y_true_index: 0=home win, 1=draw, 2=away win."""
-    import math
-
-    total = 0.0
-    for idx, p in zip(y_true_index, probs):
-        total += -math.log(max(p[idx], eps))
-    return total / len(y_true_index)
 
 
 def outcome_index(row: pd.Series) -> int:
