@@ -779,3 +779,26 @@ La decisione approvata più recente e applicabile prevale. Appendere; non riscri
 - Rationale: il mercato estivo si è chiuso; il listone definitivo è la base per l'asta di riparazione di inizio settembre (minimo offerta = quotazione). Il file admin resta l'autorità (`SOURCE_REGISTER.md`), l'ingest è fedele senza giudizio sul merito delle quotazioni/trasferimenti. Rigenerare il DuckDB "a metà" (senza `team_verified`, senza i codici sintetici che il ledger referenzia) romperebbe l'app: meglio una migrazione atomica.
 - Conseguenze (previste, alla chiusura): `data/local/fantacalcio.duckdb` rigenerato (whitelisted, ADR-2026-048); catena `add_new_signings.py` → `apply_admin_official_list.py`; 1 evento ledger `corrects` per i 4 codici; staged CSV aggiornati ma gitignored. Backup pre-refresh in scratchpad di sessione. La riconciliazione rose/G3-G4 e lo strumento riparazione restano nella stessa task (`docs/CURRENT_TASK.md` parte 2).
 - Approvato da: — (proposed; da approvare a migrazione completa e verificata)
+
+### ADR-2026-073 — Riconciliazione rose/G3-G4 nel ledger: limiti del modello `replay()` da risolvere prima di scrivere
+
+- Data: 2026-09-01
+- Stato: proposed
+- Scope: domain | architecture | data
+- Contesto: il ledger si ferma a G1+G2 (218 assegnazioni). G3/G4 non sono mai stati importati; l'unica fonte è `20lega-rosters-*.xlsx` (20×23 = 460 righe). Costruito `src/fantacalcio/ingest/lega_rosters.py` (parser griglia) + `scripts/import_lega_rosters.py` (dry-run): risoluzione squadre 20/20 (con rinomina `team_05` "Werder Bremer" → "I Have a N'Drim"), risoluzione giocatori 460/460 (`Tutti` + `Ceduti` + fallback 2 portieri), 241 assegnazioni G3/G4 candidate. **Il dry-run però fallisce `replay(existing + new)`** e questo espone tre limiti reali del modello di dominio:
+  1. **Cap di ruolo nel replay di audit.** `replay()` non annulla mai gli effetti (rosa/budget) di un evento voidato o corretto (scelta documentata in `domain.py` / `test_domain_replay.py`: "query-time concern"). Quindi un giocatore ceduto all'estero dopo G2 resta a rosa nel replay di audit; comprarne il sostituto in G3 porta il ruolo a 9 e `replay` solleva `già 8 giocatori nel ruolo MID`. `effective_events()` risolverebbe la vista, ma `ledger_store.append_event` e il seeding usano il replay di audit completo come guardia.
+  2. **Nessun evento per l'acquisto di un singolo portiere di rimpiazzo.** Ogni evento con `role=GK` è trattato come "blocco portieri"; se la squadra ha già un blocco (`gk_block_identity`), un secondo evento GK fallisce. ~8 portieri di riserva da 1cr comprati in G3/G4 non sono rappresentabili.
+  3. **Drift codice ledger↔listone.** Alcuni `player_code` a ledger (G1/G2) non coincidono col codice del listone fine mercato per lo stesso giocatore (giocatore finito in `Ceduti`, o codice sintetico negativo `-1..-4` di ADR-2026-051/064 ora con codice reale 4998/7329/5982/7551). Serve un alias esplicito, non un match silenzioso.
+- Decisione (proposta, da approvare): prima di scrivere G3/G4 sul ledger, scegliere UNA fra:
+  - (A) far sì che `replay()` scarichi rosa+budget degli eventi voidati/corretti (cambio semantico ampio, tocca invarianti e test esistenti);
+  - (B) introdurre un `ReleaseEvent` che libera uno slot e rimborsa crediti (nuovo tipo di evento, serve comunque all'asta di riparazione — le squadre svincolano e ricomprano);
+  - (C) spostare la guardia di `append_event`/seeding su `replay(effective_events(...))` invece del replay di audit completo (minimo, ma allenta un invariante di sicurezza).
+  L'opzione (B) è probabilmente necessaria comunque per la riparazione stessa (svincolo + ricompra), quindi è la candidata principale.
+- Conseguenze: nessun evento G3/G4 scritto sul ledger in questa sessione. `scripts/import_lega_rosters.py` resta dry-run (il ramo `--yes` esiste ma non è esercitato). `data/local/fantacalcio.duckdb` resta allo stato committato (502 giocatori) — il refresh listone (ADR-2026-072) e la rigenerazione del player table si fanno insieme alla riconciliazione, in modo atomico, dopo la decisione A/B/C e dopo le regole admin (budget totale, numero max svincoli). 4 nuovi test (`tests/test_ingest_lega_rosters.py`). 473+4 test passano.
+- Da riprendere (follow-up espliciti):
+  1. Scelta A/B/C sopra (probabile: `ReleaseEvent`).
+  2. Regole admin: budget totale di lega / calcolo residuo riparazione (la spesa 345–369 nel roster file supera i 340 crediti freschi da config — discrepanza da chiarire); numero max giocatori svincolabili e valore dei crediti recuperati (prezzo pagato vs quotazione).
+  3. I 4 codici negativi `-1..-4`: alias vs evento `corrects` (il `corrects` raddoppia il budget nel replay di audit).
+  4. ~8 portieri di riserva da 1cr non scrivibili finché non c'è un evento "singolo portiere".
+  5. Migrazione atomica: `run_monte_carlo` (fatto) → `run_m3` (fatto) → `apply_admin_official_list` → rebuild DuckDB 531 + import G3/G4 → export ledger per il cloud.
+- Approvato da: — (proposed)

@@ -22,8 +22,12 @@ Compilare prima di ogni modifica significativa e mantenere lo scope a una singol
 
 ## Progresso
 
-- Parte 1 (refresh listone): **fatta**, ADR-2026-072, DuckDB committato.
-- Parte 2: parser roster + dry-run in costruzione. Mappa team_id pronta (19 esatte + 1 da confermare). Nessun evento scritto sul ledger finché il dry-run non è validato e l'utente non conferma la mappa team_05.
+- Parte 1 (refresh listone): staged CSV `2026_27.csv` (531) + catena MC/m3 rigenerati e verificati. **DuckDB NON rigenerato** (ADR-2026-072 `proposed`): va fatto atomico con la riconciliazione (i 4 codici sintetici `-1..-4` ora hanno codici reali). Resta a 502 giocatori.
+- Parte 2: **parser + dry-run fatti** (`src/fantacalcio/ingest/lega_rosters.py`, `scripts/import_lega_rosters.py`, 4 test). Squadre 20/20 risolte (rinomina `team_05` "Werder Bremer"→"I Have a N'Drim" gestita); giocatori 460/460 risolti (`Tutti`+`Ceduti`+2 fallback GK); 241 assegnazioni G3/G4 candidate. **`replay(existing+new)` FALLISCE** — ADR-2026-073 documenta i 3 limiti del modello (cap ruolo nel replay di audit non annullato da void; nessun evento "singolo portiere di rimpiazzo"; drift codice ledger↔listone). **Nessun evento scritto sul ledger.**
+- Bloccanti per scrivere G3/G4:
+  1. Decisione A/B/C di ADR-2026-073 (probabile: nuovo `ReleaseEvent`, serve comunque alla riparazione).
+  2. Regole admin: budget totale/residuo (spesa 345–369 > 340 crediti freschi config: discrepanza); n° max svincoli + valore crediti.
+- Prossimo (quando sbloccato): decisione dominio → `ReleaseEvent` → import G3/G4 → rebuild DuckDB 531 atomico → export ledger cloud.
 
 ---
 
