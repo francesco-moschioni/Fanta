@@ -2,6 +2,33 @@
 
 Compilare prima di ogni modifica significativa e mantenere lo scope a una singola unità verificabile.
 
+- Obiettivo: **M7 Engine v2 — Stage 1: livello `features/` (tassonomia livello 4)**. Costruire il feature store con lineage per riga e slicing `as_of`, migrare in esso le feature oggi implicite, aggiungere il test di leakage automatico e il modulo metriche condiviso. Nessun cambio di comportamento a valle. Contesto e piano completo: ADR-2026-070, `docs/ROADMAP.md` §M7, `C:\Users\franc\.claude\plans\usa-tutto-tutto-il-zesty-cherny.md`.
+- Perché ora: l'utente ha chiesto di massimizzare previsione e valutazione d'asta ("usare tutto il disponibile"). Stage 0 (branch `feature/engine-v2`, ADR ombrello, registri, `.mcp.json` portabile, `numpy` esplicito) è fatto. Stage 1 è la spina dorsale che sblocca tutti gli stage successivi.
+- In scope:
+  - `src/fantacalcio/features/schema.py` — `FeatureRow` + `FEATURE_REGISTRY` (nome → dtype, descrizione, fonte, regola `available_time`).
+  - `src/fantacalcio/features/store.py` — `write_features(df, dataset)` → `data/features/<dataset>/` (DuckDB `COPY ... TO ... (FORMAT parquet)`, niente `pyarrow`); `read_features(dataset, as_of, names=None)` filtra `available_time <= as_of`.
+  - `src/fantacalcio/features/build.py` — builder deterministici che materializzano le feature **già consumate oggi** (running mean voto + peso shrinkage da `modeling/player_voto`, `decayed_participation_estimate` + delta `Pv` da `modeling/participation`, `recency_weight` da `modeling/time_decay`, attacco/difesa/Elo per squadra ai confini stagione da `dixon_coles`/`elo`, bucket FVM da `scoring/fvm_prior`, ruolo/quotazione/FVM/`admin_rank` dal listone). Chiamano i moduli esistenti, non li riscrivono.
+  - `src/fantacalcio/features/leakage.py` — `assert_available_before_decision(...)` + versione batch sui fold (generalizza `modeling/validation.assert_no_leakage`).
+  - `src/fantacalcio/modeling/metrics.py` — CRPS empirico, PIT/coverage, Brier, log-loss multinomiale (sposta quella in `validation.py` e re-export), rank-corr/NDCG@k, MAE/RMSE. Solo `numpy`/`pandas`/`scipy`.
+  - `scripts/build_features.py` — batch (un passaggio per confine stagione + uno "final" per 2026/27), convenzione `run_*`.
+  - `.gitignore` — `data/features/` (fatto in Stage 0).
+- Fuori scope: qualsiasi condizionamento del Monte Carlo (Stage 2+), nuove fonti dati (Stage 3+), qualsiasi modifica al path d'asta live. Nessun merge su `fanta`.
+- File probabilmente coinvolti: i 6 nuovi sopra + `tests/test_features_store.py`, `tests/test_features_leakage.py`, `tests/test_features_build.py`, `tests/test_metrics.py`.
+- Criteri di accettazione: `python scripts/build_features.py` popola `data/features/`; `read_features(..., as_of=T)` esclude ogni riga con `available_time > T`; ogni output di builder ha tutte le colonne di lineage non-null e `quality_tier ∈ {A,B,C}`; il test di leakage **fallisce** su una riga avvelenata (`available_time` dopo il decision time) e **passa** sulle feature reali migrate; la feature di shrinkage migrata riproduce `player_voto.walk_forward` bit-a-bit (regression lock); CRPS di una point-mass sul valore vero = 0; i path a valle (`run_monte_carlo_fantavoto.py`, `build_player_table.py`, pagine) restano invariati e i 473 test esistenti + i nuovi passano.
+- Comandi test/quality: `pytest -q` (e mirato: `pytest -q tests/test_features_*.py tests/test_metrics.py`).
+- Seed: builder deterministici, nessun campionamento in Stage 1. Dove serve un `rng`, esplicito.
+- Delegazione: consentita per lo scaffold dei moduli e dei test (worker Claude), inspection e test obbligatori prima del merge. Vietata ogni scelta di dominio/statistica.
+- Decisioni aperte/blocchi: formato di persistenza — `COPY ... TO ... (FORMAT parquet)` di DuckDB evita `pyarrow`; se dà problemi su Windows, fallback a CSV gzip. Nessun altro blocco.
+
+## Progresso
+
+- Stage 0: **fatto**. Branch `feature/engine-v2`; ADR-2026-070 (ombrello) appeso a `docs/DECISIONS.md`; `docs/ROADMAP.md` §M7 aggiunto; `docs/SOURCE_REGISTER.md` sezione "Override d'uso personale"; `.mcp.json`/`.mcp.local.json` gitignored + nota setup in `README_SETUP.md` §5b; `numpy>=1.26` esplicito in `pyproject.toml`/`requirements.txt` + extra `ml`/`solver`; `data/features/` e `data/models/` in `.gitignore`. Test Stage 0 da aggiungere (`tests/test_mcp_config.py`, `tests/test_project_metadata.py`).
+- Stage 1: in corso.
+
+---
+
+## Task precedente (archiviata)
+
 - Obiettivo (due filoni in parallelo, richiesti insieme dall'utente):
   1. **Ingest risultati reali G2 + liste di preferenza complete (incluse le offerte fallite)**: l'utente ha caricato `Riepilogo secondo giro asta.xlsx` (recap admin cumulativo G1+G2, 9 coppie giocatore/costo per squadra: col.1 blocco portieri G1 già a ledger, col.2-4 i 3 difensori G1 già a ledger, col.5-7 le 3 fasce centrocampisti G2 nuove, col.8-9 le 2 fasce attaccanti G2 nuove — colore giallo/viola = assegnazione automatica admin, confermato dall'utente, trattata come vinta al pari di verde/ciano) e le 9 "Lista N - ... (Risposte).xlsx" (una riga per squadra con le 6 preferenze reali per fascia, colorate verde=vinta/rosso=tentata e persa/arancione=mai valutata). Obiettivo: (a) scrivere sul ledger reale i soli eventi G2 nuovi (le colonne già coperte da G1 vanno saltate, sono già eventi nel ledger da ADR-2026-055); (b) usare le liste complete (comprese le offerte perse) per modellare meglio il comportamento delle squadre avversarie in `market_model.py` — quanto sopra la propria quotazione/minimo una squadra è disposta a spingersi prima di perdere, quante preferenze "brucia" — per inferire strategia/aggressività reale, non i soli esiti finali.
   2. **Interfaccia per G3 (fase finale a busta chiusa, senza liste)**: G3 è già in `config/auction_rules.v1.yaml` (`sealed_bid_free`, pool `remaining_players`, `max_players_this_phase: 6`, `minimum_bid_source: player_quotazione`, `resolution_priority: highest_bid`) ma non ha ancora una pagina app. A differenza di G2 (buste a fasce, preferenza-poi-offerta, si vince al più 1 per fascia), in G3 non ci sono liste/fasce: si scelgono fino a 6 giocatori liberi qualsiasi con un'offerta secca ciascuno, e si può potenzialmente vincerli tutti e 6 (nessun cap "1 per gruppo" come in G2) — il caso peggiore di spesa è quindi la SOMMA delle 6 offerte, non il massimo. Dopo G3/G4 l'admin assegna manualmente il resto (`post_auction_completion`, non un'asta).

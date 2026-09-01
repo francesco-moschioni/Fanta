@@ -8,6 +8,8 @@ cookies*.json
 data/raw/
 data/staged/
 data/curated/
+data/features/
+data/models/
 data/private/
 # data/local/ escluso file-per-file (non con una regola sulla cartella intera)
 # perché git non permette di "riammettere" un file dentro una cartella già
@@ -36,3 +38,11 @@ build/
 _old/
 fantacalcio-project-kit-completo.zip
 .claude/scheduled_tasks.lock
+
+# Live auction operational export, never publish
+ledger_export_for_cloud.json
+
+# MCP: config locale con path assoluto della macchina, non portabile (ADR-2026-070).
+# Il setup e' documentato in CLAUDE.md; ogni sviluppatore tiene la propria copia.
+.mcp.json
+.mcp.local.json

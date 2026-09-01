@@ -59,6 +59,28 @@ Non chiedere “costruisci tutta l’app”. Un buon task produce una modifica v
 
 I quattro giri d’asta sono già configurati. Restano deliberatamente aperti alcuni dettagli del punteggio e dell’amministrazione storica, raccolti in `docs/OPEN_QUESTIONS.md`. Non bloccano data audit, identity layer, motore d’asta o UI pre-asta; bloccano soltanto le parti che richiedono quelle formule esatte.
 
+## 5b. MCP `football-docs` (opzionale, riferimento provider dati)
+
+L'MCP `football-docs` (progetto nutmeg, https://nutmeg.withqwerty.com) espone
+documentazione ricercabile di 23 provider di dati calcio (endpoint, sistemi di
+coordinate, qualifier ID). E' solo documentazione: non porta dati. Utile quando
+si scrive codice di ingest per non indovinare gli schemi.
+
+`.mcp.json` e `.mcp.local.json` sono **gitignored** (ADR-2026-070): contengono un
+path assoluto della macchina, non portabile. Setup per macchina:
+
+```bash
+npm install -g football-docs
+# poi crea .mcp.json nella root con:
+# { "mcpServers": { "football-docs": {
+#     "command": "node",
+#     "args": ["<prefix-npm-globale>/node_modules/football-docs/bin/serve.js"] } } }
+```
+
+`npx -y football-docs` a freddo va in timeout (>30 s) alla prima connessione MCP:
+usare l'install globale + path esplicito. `resolve_entity` non funziona senza una
+credenziale "Reep" (non necessaria per il resto).
+
 ## 6. Gemini CLI
 
 Installa e autentica Gemini CLI, poi delega solo tramite il wrapper:

@@ -6,6 +6,7 @@ requires-python = ">=3.11"
 dependencies = [
     "pyyaml>=6",
     "pandas>=2",
+    "numpy>=1.26",
     "openpyxl>=3.1",
     "scipy>=1.11",
     "duckdb>=1.0",
@@ -15,6 +16,17 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=8",
+]
+# Engine v2 (ADR-2026-070). Import guardati: il core e i test non-ML girano
+# senza questi. Promossi in produzione solo se battono le baseline OOS.
+ml = [
+    "scikit-learn>=1.4",
+    "lightgbm>=4",
+]
+# Solo per il cross-check del duale nel test del prezzo ombra (Stage 6).
+# La rotta di produzione e' il Lagrangiano sul DP esistente, senza solver.
+solver = [
+    "pulp>=2.7",
 ]
 
 [build-system]
