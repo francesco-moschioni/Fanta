@@ -802,3 +802,18 @@ La decisione approvata più recente e applicabile prevale. Appendere; non riscri
   4. ~8 portieri di riserva da 1cr non scrivibili finché non c'è un evento "singolo portiere".
   5. Migrazione atomica: `run_monte_carlo` (fatto) → `run_m3` (fatto) → `apply_admin_official_list` → rebuild DuckDB 531 + import G3/G4 → export ledger per il cloud.
 - Approvato da: — (proposed)
+
+### ADR-2026-081 — Riconciliazione G3/G4 nel ledger: team_01 landed, resto bloccato su nuance di dominio
+
+- Data: 2026-09-02
+- Stato: approved (parziale: solo `team_01`)
+- Supersedes: nulla; sblocca parzialmente ADR-2026-073, resta subordinata alle sue decisioni A/B/C per il resto
+- Scope: data | domain
+- Contesto: serviva la rosa completa di `team_01` (Garlascow Rangers) a ledger per usare il tool "Formazione" (ADR-2026-080). `scripts/import_lega_rosters.py` riscritto per la scrittura reale:
+  - **Resolver** `Tutti` + `Ceduti` + fallback 2 portieri + alias 4 codici negativi → **460/460 nomi risolti**.
+  - **Validazione** via `replay(effective_events(existing + new))` (vista corrente), non il replay di audit completo — così `VoidEvent`/`corrects` per i blocchi portieri si comportano come previsto. `ledger_store.append_event` non valida (solo il seeding da Secrets lo fa), quindi lo script è l'unico guardiano.
+  - **Eventi**: `AssignmentEvent` round G3 pool `remaining_players` (pool aperto, ogni ruolo) per i nuovi outfield; per i 7 blocchi portieri cambiati, `VoidEvent` del blocco G1 + nuovo blocco a 3 in G3 (+ `BudgetAdjustmentEvent` di rimborso del costo G1); `BudgetAdjustmentEvent` in G3 per chiudere il gap "spesa reale rosa > `remaining_G2 + 40`" (la discrepanza 340-vs-369, `reason` che la marca come questione admin aperta).
+- **Nuance di dominio scoperta (blocca il resto)**: il roster della lega è **posizionale** (3-8-8-4 slot), ma alcuni giocatori occupano uno slot di ruolo diverso dal loro ruolo listone (Isaksen/Rodriguez Je. — `role='C'` per il punteggio ma pescati come attaccanti, ADR-2026-068; Giallo-Verde Tampere ha un D in slot C). Il `max_role_counts` di `domain.replay` è per ruolo-singolo (8 MID), quindi team_02 con 8 centrocampisti "veri" + Isaksen-a-ledger-come-MID = 9 MID → `DomainError`. Servirebbe separare "ruolo di slot/cap" da "ruolo di punteggio" (nuovo campo o `corrects` di ruolo), cosa che tocca invarianti e test → **decisione di dominio, come ADR-2026-073**.
+- Decisione: scritto **solo `team_01`** (`--only-team team_01`): 12 `AssignmentEvent` G3 + 1 `BudgetAdjustmentEvent` (gap +14). `replay(effective_events)` OK, rosa risultante 23 (P3 D8 C8 A4). Ledger 200 → 213 eventi. Gli altri 19 team restano da fare quando la nuance ruolo-slot e il `ReleaseEvent` di ADR-2026-073 sono decisi. DuckDB rigenerato a **531 giocatori** (catena `run_m3` già fatta → `apply_admin_official_list`), committato — ADR-2026-072 passa da `proposed` ad `approved` (limitatamente al refresh listone + rebuild; i 4 codici sintetici `-1..-4` restano a ledger per team 11/13/19, non ancora riconciliati). 2 giocatori di team_01 (`7545` Vismara, `5813` Miretti, entrambi nel foglio `Ceduti`) non hanno riga nel DuckDB: sono fuori dalla Serie A, il tool Formazione li mostra non schierabili.
+- Conseguenze: `scripts/import_lega_rosters.py` riscritto (dry-run default, `--yes`, `--only-team`, `--relabel-team05`). `data/local/ledger.sqlite3` (gitignored, stato condiviso su disco) ora contiene la rosa completa di team_01. `data/local/fantacalcio.duckdb` rigenerato a 531 e committato. 477 test passano (invariati). L'export ledger per il cloud (`ledger_export_for_cloud.json`) va rifatto dall'utente quando vuole allineare Streamlit Cloud.
+- Approvato da: project owner (rosa team_01 richiesta per il tool Formazione)

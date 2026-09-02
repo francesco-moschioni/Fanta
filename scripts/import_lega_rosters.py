@@ -2,44 +2,45 @@
 league-platform roster export, so the ledger reflects the real pre-riparazione
 state (today it stops at G1+G2).
 
-Source: "20lega-rosters-*.xlsx" (see src/fantacalcio/ingest/lega_rosters.py).
-20 teams x 23 players, each (name, cost). A trailing "*" = player left Serie A.
+Source: "20lega-rosters-*.xlsx" (see src/fantacalcio/ingest/lega_rosters.py) +
+the end-of-market listone "Quotazioni_Fantacalcio_Stagione_2026_27.xlsx".
 
-Method
-------
-1. Parse the grid; resolve each platform team name to a `team_id` via
-   `ledger.team_labels` (19/20 exact; `team_05` was renamed "Werder Bremer" ->
-   "I Have a N'Drim", confirmed by the owner 2026-09-01).
-2. Resolve every player display name to a `player_code` against the refreshed
-   end-of-market listone: the `Tutti` sheet first, then the `Ceduti` sheet
-   (players who left Serie A but still occupy a roster slot), then a small
-   explicit fallback for two goalkeepers only in an older listone.
-3. The 4 players carried under synthetic negative codes at G2 time
-   (ADR-2026-051/064: Molina N. -1, Obrador -2, Spence -3, Schmid -4) now have
-   real Fantacalcio.it codes. Their negative code is aliased to the real one so
-   the roster line is recognised as already-owned (no duplicate assignment) --
-   the ledger history for those 4 is NOT rewritten here (that needs its own
-   decision; the replay() correction mechanism double-counts budget in the audit
-   view -- see docs/CURRENT_TASK.md follow-ups).
-4. For each team: owned = G1+G2 player_ids from the ledger (negatives aliased).
-   new = roster player_codes - owned. Every `new` non-goalkeeper line becomes an
-   AssignmentEvent in round G3 (G3 and G4 share the pool `remaining_players` and
-   a single carried budget `remaining_G2 + 40`, so the G3/G4 split does not
-   change any invariant; labelling everything G3 is budget-equivalent).
-   Goalkeeper blocks were all set in G1; no G3/G4 GK lines exist in the export,
-   so GK reconciliation is out of scope here (2 known GK swaps are flagged, not
-   written -- docs/CURRENT_TASK.md).
-5. Validate the whole thing via `replay(existing + new)`. Dry-run by default;
-   `--yes` appends.
+Method (ADR-2026-081)
+---------------------
+1. Resolve every platform team name to a `team_id` via `ledger.team_labels`
+   (19/20 exact; `team_05` renamed "Werder Bremer" -> "I Have a N'Drim").
+2. Resolve every player display name to a `player_code` against the listone
+   `Tutti` + `Ceduti` sheets, plus a 2-code fallback for old goalkeepers and an
+   alias for the 4 synthetic negative codes (`-1..-4` -> real, ADR-2026-051/064).
+   All 460 names resolve.
+3. `owned` per team = the ledger's G1+G2 player_ids (negative-aliased).
+   `new` = resolved roster codes - owned.
+4. Every `new` non-goalkeeper line -> `AssignmentEvent` in round **G3**, pool
+   `remaining_players` (open pool, any role). G3 and G4 share the pool and one
+   carried budget (`remaining_G2 + 40`), so labelling everything G3 changes no
+   invariant.
+5. Goalkeeper blocks: 13/20 teams' roster keepers already match the G1 block. The
+   other 7 swapped one keeper in G3/G4 -> a `VoidEvent` on the G1 block + a new
+   3-keeper `AssignmentEvent` in G3 (pool `remaining_players`, role GK). Under
+   the *current-view* replay (`effective_events`) the voided block is dropped, so
+   the new block applies cleanly; the full audit replay would double it, which is
+   why validation here uses `replay(effective_events(...))`.
+6. Where a team's real roster cost exceeds its config-derived G3 budget
+   (`remaining_G2 + 40`) -- the 340-vs-369 discrepancy, admin gave more credits
+   than the base rounds imply -- a `BudgetAdjustmentEvent` in G3 closes the gap
+   (`reason="lega_roster_reconciliation"`), so the honest spend replays and the
+   discrepancy is on the record for the still-open admin-rules question.
+7. Validate the whole thing via `replay(effective_events(existing + new))`.
+   Dry-run by default; `--yes` appends; `--relabel-team05` also fixes the label.
 
-Usage
------
+Usage:
     python scripts/import_lega_rosters.py <roster.xlsx> <listone.xlsx> [--yes] [--relabel-team05]
 """
 
 from __future__ import annotations
 
 import argparse
+import collections
 import difflib
 import sys
 import unicodedata
@@ -52,28 +53,33 @@ import openpyxl
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from fantacalcio.config import ConfigError, load_ruleset
-from fantacalcio.domain import AssignmentEvent, AssignmentItem, DomainError, Role, replay
+from fantacalcio.domain import (
+    AssignmentEvent,
+    AssignmentItem,
+    BudgetAdjustmentEvent,
+    DomainError,
+    Role,
+    VoidEvent,
+    effective_events,
+    evaluate_budget_expr,
+    replay,
+)
 from fantacalcio.ingest.lega_rosters import parse_roster_file
 from fantacalcio.persistence import ledger_store, team_labels_store
 
 ROUND_ID = "G3"
 POOL_ID = "remaining_players"
+GK_POOL_ID = "goalkeeper_blocks"
 SOURCE = "lega_roster_export_import"
 AUTHOR = "utente"
 
-# Synthetic negative code -> real Fantacalcio.it code (new end-of-market listone).
 NEGATIVE_ALIAS = {"-1": "4998", "-2": "7329", "-3": "5982", "-4": "7551"}
-
-# team_05 was labelled "Werder Bremer"; the roster export calls it "I Have a N'Drim".
+OLD_GK_FALLBACK = {"lolic": ("7466", "P"), "satalino": ("2127", "P")}
 TEAM05_OLD_LABEL = "Werder Bremer"
 TEAM05_NEW_LABEL = "I Have a N'Drim"
 
-# Two goalkeepers that are in the ledger (G1 blocks) but no longer resolvable
-# against the current listone and not in Ceduti -- older-listone codes, kept so
-# the resolver can still see them by name if they appear.
-OLD_GK_FALLBACK = {"lolic": ("7466", "P"), "satalino": ("2127", "P")}
-
 _ROLE_MAP = {"P": Role.GK, "D": Role.DEF, "C": Role.MID, "A": Role.FWD}
+_TS = datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
 def _norm(s: str) -> str:
@@ -81,61 +87,54 @@ def _norm(s: str) -> str:
     return s.lower().replace(".", "").replace("'", " ").replace("-", " ").split("*")[0].strip()
 
 
-def _load_listone_index(listone_xlsx: Path) -> dict[str, list[tuple[str, str, str, str]]]:
-    """norm(name) -> list of (player_code, role_letter, display_name, team_name)
-    across the `Tutti` and `Ceduti` sheets of the end-of-market Quotazioni file."""
+def _squash(s: str) -> str:
+    return "".join(ch for ch in _norm(s) if ch.isalnum())
+
+
+def _load_listone_index(listone_xlsx: Path) -> dict[str, list[tuple[str, str]]]:
     wb = openpyxl.load_workbook(listone_xlsx, read_only=True, data_only=True)
-    idx: dict[str, list[tuple[str, str, str, str]]] = {}
+    idx: dict[str, list[tuple[str, str]]] = collections.defaultdict(list)
     for sheet in ("Tutti", "Ceduti"):
         if sheet not in wb.sheetnames:
             continue
-        ws = wb[sheet]
-        for r in ws.iter_rows(min_row=3, values_only=True):
+        for r in wb[sheet].iter_rows(min_row=3, values_only=True):
             if r[0] is None:
                 continue
             try:
                 code = str(int(r[0]))
             except (TypeError, ValueError):
                 continue
-            role, name, team = str(r[1]), str(r[3]), str(r[4])
-            idx.setdefault(_norm(name), []).append((code, role, name, team))
+            idx[_norm(r[3])].append((code, str(r[1])))
     wb.close()
     return idx
 
 
-def _resolve_player(name: str, idx: dict) -> tuple[tuple[str, str] | None, str]:
-    """-> ((player_code, role_letter), how) or (None, reason)."""
+def _resolve_player(name: str, idx) -> tuple[str, str] | None:
+    """-> (player_code, role_letter) or None."""
     n = _norm(name)
-    if n in idx:
-        hits = idx[n]
-        if len(hits) == 1:
-            c, role, *_ = hits[0]
-            return (c, role), "exact"
-        return None, f"AMBIGUOUS x{len(hits)}: {[h[2] + '/' + h[1] for h in hits]}"
+    if n in idx and len(idx[n]) == 1:
+        code, role = idx[n][0]
+        return NEGATIVE_ALIAS.get(code, code), role
     if n in OLD_GK_FALLBACK:
-        c, role = OLD_GK_FALLBACK[n]
-        return (c, role), "old-listone-gk"
-    close = difflib.get_close_matches(n, list(idx), n=3, cutoff=0.86)
+        return OLD_GK_FALLBACK[n]
+    close = difflib.get_close_matches(n, list(idx), n=2, cutoff=0.86)
     if len(close) == 1 and len(idx[close[0]]) == 1:
-        c, role, *_ = idx[close[0]][0]
-        ratio = difflib.SequenceMatcher(None, n, close[0]).ratio()
-        return (c, role), f"fuzzy~{ratio:.2f}"
-    return None, f"NO-MATCH (close: {close})" if close else "NO-MATCH"
+        code, role = idx[close[0]][0]
+        return NEGATIVE_ALIAS.get(code, code), role
+    return None
 
 
 def _resolve_team_id(name: str, labels: dict[str, str]) -> str | None:
-    target = _norm(name)
-    squash = lambda s: "".join(ch for ch in _norm(s) if ch.isalnum())
     for tid, lab in labels.items():
-        if _norm(lab) == target or squash(lab) == squash(name):
+        if _squash(lab) == _squash(name):
             return tid
-    if squash(name) == squash(TEAM05_NEW_LABEL):
+    if _squash(name) == _squash(TEAM05_NEW_LABEL):
         for tid, lab in labels.items():
-            if _norm(lab) == _norm(TEAM05_OLD_LABEL):
+            if _squash(lab) == _squash(TEAM05_OLD_LABEL):
                 return tid
     best, best_r = None, 0.0
     for tid, lab in labels.items():
-        r = difflib.SequenceMatcher(None, target, _norm(lab)).ratio()
+        r = difflib.SequenceMatcher(None, _norm(name), _norm(lab)).ratio()
         if r > best_r:
             best, best_r = tid, r
     return best if best_r >= 0.80 else None
@@ -146,8 +145,14 @@ def main() -> int:
     ap.add_argument("roster_xlsx", type=Path)
     ap.add_argument("listone_xlsx", type=Path)
     ap.add_argument("--yes", action="store_true", help="append to the ledger (default: dry-run)")
-    ap.add_argument("--relabel-team05", action="store_true",
-                    help="also update team_labels: team_05 -> 'I Have a N'Drim'")
+    ap.add_argument("--relabel-team05", action="store_true")
+    ap.add_argument(
+        "--only-team",
+        default=None,
+        help="reconcile just this team_id (e.g. team_01). Some teams need the "
+        "positional-role / ReleaseEvent handling not yet in the domain model "
+        "(ADR-2026-073/081); --only-team lets the clean ones land now.",
+    )
     args = ap.parse_args()
 
     ruleset = load_ruleset(Path("config/auction_rules.v1.yaml"))
@@ -159,94 +164,163 @@ def main() -> int:
     ledger_conn = ledger_store.connect()
     existing = ledger_store.load_events(ledger_conn)
 
-    # owned player_ids per team from the ledger (G1+G2), negatives aliased
-    owned: dict[str, set[str]] = {}
+    # current-view state: owned codes per team (neg-aliased), G1 GK block event id,
+    # and remaining_G2 per team for the budget-gap check.
+    eff_state = replay(ruleset, effective_events(existing))
+    owned: dict[str, set[str]] = collections.defaultdict(set)
+    gk_block_event: dict[str, tuple[str, int]] = {}
     for ev in existing:
         if isinstance(ev, AssignmentEvent):
-            s = owned.setdefault(ev.team_id, set())
             for pid in ev.item.player_ids:
-                s.add(NEGATIVE_ALIAS.get(pid, pid))
+                owned[ev.team_id].add(NEGATIVE_ALIAS.get(pid, pid))
+            if ev.role is Role.GK:
+                gk_block_event[ev.team_id] = (ev.event_id, ev.amount)
+    remaining_g2 = {
+        tid: t.budgets["G2"].remaining
+        for tid, t in eff_state.teams.items()
+        if "G2" in t.budgets
+    }
 
-    new_events: list[AssignmentEvent] = []
+    new_events: list = []
     errors: list[str] = []
-    flags: list[str] = []
-    ts = datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+    per_team_report: list[str] = []
 
     for team_name, slots in staged.teams.items():
         tid = _resolve_team_id(team_name, labels)
         if tid is None:
             errors.append(f"team not resolved: {team_name!r}")
             continue
-        team_owned = owned.get(tid, set())
-        resolved_codes: set[str] = set()
-        for slot in slots:
-            res, how = _resolve_player(slot.display_name, idx)
-            if res is None:
-                errors.append(f"[{team_name}] {slot.display_name!r} ({slot.cost}cr): {how}")
-                continue
-            code, role_letter = res
-            code = NEGATIVE_ALIAS.get(code, code)
-            resolved_codes.add(code)
-            if code in team_owned:
-                continue  # already on the ledger (G1/G2, or negative-aliased)
-            if _ROLE_MAP[role_letter] is Role.GK:
-                flags.append(f"[{team_name}] GK line not in ledger, NOT written: "
-                             f"{slot.display_name} {slot.cost}cr (GK swaps out of scope)")
-                continue
-            new_events.append(AssignmentEvent(
-                event_id=uuid.uuid4().hex,
-                ts=ts,
-                round_id=ROUND_ID,
-                team_id=tid,
-                pool_id=POOL_ID,
-                role=_ROLE_MAP[role_letter],
-                item=AssignmentItem(player_ids=(code,)),
-                amount=int(slot.cost),
-                source=SOURCE,
-                author=AUTHOR,
-                corrects=None,
-            ))
-        # ledger players no longer on the roster (info only)
-        gone = team_owned - resolved_codes
-        if gone:
-            flags.append(f"[{team_name}] in ledger but not on current roster: {sorted(gone)}")
+        if args.only_team and tid != args.only_team:
+            continue
 
-    print(f"Parsed {len(staged.teams)} teams. New G3/G4 assignments to write: {len(new_events)}. "
-          f"Errors: {len(errors)}. Flags: {len(flags)}.")
-    for f in flags:
-        print("  FLAG:", f)
+        resolved: dict[str, str] = {}  # code -> role_letter
+        roster_gk: list[str] = []
+        for slot in slots:
+            r = _resolve_player(slot.display_name, idx)
+            if r is None:
+                errors.append(f"[{team_name}] unresolved: {slot.display_name!r} ({slot.cost}cr)")
+                continue
+            code, role = r
+            resolved[code] = role
+            if role == "P":
+                roster_gk.append(code)
+
+        team_owned = owned.get(tid, set())
+        team_new: list = []
+        g3_spend = 0
+
+        # 1. GK block: void + re-add if the roster's keepers differ from the G1 block
+        ledger_gk = {p for p in team_owned if resolved.get(p) == "P" or p in roster_gk}
+        # accurate ledger GK set: the codes in the G1 GK block event
+        g1_gk_ids = set()
+        for ev in existing:
+            if isinstance(ev, AssignmentEvent) and ev.team_id == tid and ev.role is Role.GK:
+                g1_gk_ids = {NEGATIVE_ALIAS.get(p, p) for p in ev.item.player_ids}
+        gk_changed = set(roster_gk) != g1_gk_ids and tid in gk_block_event
+        if gk_changed:
+            old_id, old_amount = gk_block_event[tid]
+            team_new.append(VoidEvent(
+                event_id=uuid.uuid4().hex, ts=_TS, voids=old_id, author=AUTHOR,
+                reason="lega_roster_reconciliation: blocco portieri cambiato in G3/G4",
+            ))
+            team_new.append(AssignmentEvent(
+                event_id=uuid.uuid4().hex, ts=_TS, round_id=ROUND_ID, team_id=tid,
+                pool_id=POOL_ID, role=Role.GK,
+                item=AssignmentItem(player_ids=tuple(sorted(roster_gk))),
+                amount=int(old_amount), source=SOURCE, author=AUTHOR, corrects=None,
+            ))
+            g3_spend += int(old_amount)
+            # a re-added GK block does NOT consume fresh G3 budget beyond what G1
+            # already paid; net it back out with a negative adjustment below.
+            team_new.append(BudgetAdjustmentEvent(
+                event_id=uuid.uuid4().hex, ts=_TS, round_id=ROUND_ID, team_id=tid,
+                amount=int(old_amount),
+                reason="lega_roster_reconciliation: rimborso costo blocco portieri G1 riassegnato in G3",
+                author=AUTHOR,
+            ))
+
+        # 2. new outfield players
+        cost_by_code = {}
+        for slot in slots:
+            r = _resolve_player(slot.display_name, idx)
+            if r:
+                cost_by_code[r[0]] = int(slot.cost)
+        for code, role in resolved.items():
+            if role == "P":
+                continue
+            if code in team_owned:
+                continue
+            cost = cost_by_code.get(code, 1)
+            g3_spend += cost
+            team_new.append(AssignmentEvent(
+                event_id=uuid.uuid4().hex, ts=_TS, round_id=ROUND_ID, team_id=tid,
+                pool_id=POOL_ID, role=_ROLE_MAP[role],
+                item=AssignmentItem(player_ids=(code,)),
+                amount=cost, source=SOURCE, author=AUTHOR, corrects=None,
+            ))
+
+        # 3. budget-gap adjustment (the honest total spend exceeds remaining_G2 + 40)
+        g3_avail = evaluate_budget_expr(
+            next(r for r in ruleset.rounds if r.id == "G3").budget_available_expr,
+            {"G2": remaining_g2.get(tid, 0)},
+        )
+        gap = g3_spend - g3_avail
+        if gap > 0:
+            team_new.insert(0, BudgetAdjustmentEvent(
+                event_id=uuid.uuid4().hex, ts=_TS, round_id=ROUND_ID, team_id=tid,
+                amount=int(gap),
+                reason=f"lega_roster_reconciliation: spesa reale rosa supera remaining_G2+40 di {gap} "
+                       "(discrepanza budget lega, questione admin aperta)",
+                author=AUTHOR,
+            ))
+
+        new_events.extend(team_new)
+        n_ass = sum(1 for e in team_new if isinstance(e, AssignmentEvent))
+        per_team_report.append(
+            f"  {tid:8} {team_name:24} nuovi={n_ass:2} spesa_G3={g3_spend:3} "
+            f"avail_G3={g3_avail:3} gap={max(gap,0):+d} gk_cambiato={gk_changed}"
+        )
+
+    print(f"Squadre: {len(staged.teams)}. Eventi nuovi: {len(new_events)} "
+          f"({sum(1 for e in new_events if isinstance(e, AssignmentEvent))} assegnazioni, "
+          f"{sum(1 for e in new_events if isinstance(e, VoidEvent))} void, "
+          f"{sum(1 for e in new_events if isinstance(e, BudgetAdjustmentEvent))} agg. budget). "
+          f"Errori: {len(errors)}.")
+    for line in per_team_report:
+        print(line)
     if errors:
-        print("\nERRORS (nothing written):")
+        print("\nERRORI (nessuna scrittura):")
         for e in errors:
             print("  -", e)
         return 1
 
+    # order: VoidEvents first (no round), then G3 events; keeps round-ordering happy
+    new_events.sort(key=lambda e: 0 if isinstance(e, VoidEvent) else 1)
     try:
-        replay(ruleset, existing + new_events)
+        state = replay(ruleset, effective_events(existing + new_events))
     except (DomainError, ConfigError) as exc:
-        print(f"\nREPLAY FAILED, nothing written: {exc}")
+        print(f"\nREPLAY (effective) FALLITO, nessuna scrittura: {exc}")
         return 1
-    print("replay(existing + new) OK: invariants hold.")
-
-    # per-team spend summary
-    by_team: dict[str, int] = {}
-    for ev in new_events:
-        by_team[ev.team_id] = by_team.get(ev.team_id, 0) + ev.amount
-    for tid in sorted(by_team):
-        print(f"  {tid} ({labels.get(tid,'')}): +{by_team[tid]}cr over {sum(1 for e in new_events if e.team_id==tid)} picks")
+    print("replay(effective_events(existing + new)) OK: invarianti rispettati.")
+    for tid in sorted(state.teams):
+        t = state.team(tid)
+        n = sum(len(t.roster[r]) for r in Role)
+        print(f"  {tid}: rosa {n} giocatori "
+              f"(P{len(t.roster[Role.GK])} D{len(t.roster[Role.DEF])} "
+              f"C{len(t.roster[Role.MID])} A{len(t.roster[Role.FWD])})")
 
     if not args.yes:
-        print("\nDRY-RUN: nothing written. Re-run with --yes to append.")
+        print("\nDRY-RUN: nessuna scrittura. Rilancia con --yes per scrivere sul ledger.")
         return 0
 
     if args.relabel_team05:
         for tid, lab in labels.items():
-            if _norm(lab) == _norm(TEAM05_OLD_LABEL):
+            if _squash(lab) == _squash(TEAM05_OLD_LABEL):
                 team_labels_store.set_label(labels_conn, tid, TEAM05_NEW_LABEL)
-                print(f"relabelled {tid}: {lab!r} -> {TEAM05_NEW_LABEL!r}")
+                print(f"relabel {tid}: {lab!r} -> {TEAM05_NEW_LABEL!r}")
     for ev in new_events:
         ledger_store.append_event(ledger_conn, ev)
-    print(f"Appended {len(new_events)} events. Ledger now has {len(ledger_store.load_events(ledger_conn))}.")
+    print(f"Scritti {len(new_events)} eventi. Ledger ora: {len(ledger_store.load_events(ledger_conn))} eventi.")
     return 0
 
 
