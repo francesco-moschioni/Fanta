@@ -31,6 +31,8 @@ Baseline obbligatorie: stagione precedente, media per ruolo, minuti-only, per-90
 
 Feature: recency e carriera shrinkata; ruolo/uso tattico; minuti, partenze e gerarchie; xG/xA/tiri; set pieces e rigori; disciplina; forza squadra/avversario; casa, riposo, congestione e calendario; trasferimenti/allenatore; infortunio/squalifica/convocazione; quote senza margine; qualità/missingness della fonte; override umano versionato con autore, scadenza e confidenza.
 
+Boosting per il voto base (ADR-2026-078, Engine v2 Stage 5, **costruito ma guardato, default OFF**): `models/base_voto_gbm.py` è un regressore LightGBM a quantili sulle feature di livello 4 con imputazione/fit/calibrazione isotonica **dentro ogni fold**; `import lightgbm`/`sklearn` sono guardati (`HAS_LGB`), `fit_base_voto_gbm` solleva `RuntimeError` chiaro quando l'extra `ml` manca. Il fit reale e il gate OOS sono **deferiti** (macchina offline, `pip install` fallisce). Baseline da battere: shrinkage EB di `player_voto.walk_forward` + `modeling/baselines.py`. Aspettativa: panel piccolo/ripetitivo → "non spedito" è un esito valido; il valore durevole è il registro + l'harness di ablation.
+
 ## Livelli dati
 
 1. `raw`: snapshot immutabili, checksum e metadati di accesso.
@@ -65,6 +67,8 @@ Il training deve poter escludere una fonte o un tier intero.
 - Breakdown per ruolo, stagione, orizzonte, minuti, prezzo/tier, trasferiti/promossi e qualità dati.
 - Backtest di decisione: replay asta e giornate, budget/slot reali, replacement e regret.
 - Ablation per famiglie di feature/fonti e intervalli di incertezza sulle metriche.
+
+Registro modelli (ADR-2026-078, livello 5): `models/registry.py` — cartella `data/models/<name>/<config_hash>/` con `manifest.json` (config, git sha, seed, fold, feature list, filtro fonte/tier, metriche, timestamp) + `artifact.pkl` + `metrics.json`. Niente server/DB/MLflow. `config_hash` = sha256[:16] del JSON canonico (stabile al riordino chiavi). `beats_baseline(model_metrics, baseline_metrics, keys=("mae","spearman","coverage"))` ritorna il confronto per-chiave completo + `overall_wins` (better-or-equal su tutte, strettamente migliore su almeno una); la decisione di spedizione la registra il chiamante/ADR, la CI verifica solo che il confronto giri. Harness di ablation: `models/ablation.py::run_ablation(fit_fn, eval_fn, feature_frame, families=, sources=, tiers=, folds=)` — retrain droppando ogni famiglia/fonte/tier, frame tidy di delta vs full-feature con colonna di incertezza (fold-spread o bootstrap); puro numpy/pandas/scipy, gira senza l'extra `ml`.
 
 ## Forecast-to-bid
 

@@ -47,13 +47,37 @@ def sample_base_voto(
     ``model="level0"`` (default) is the empirical-Bayes shrinkage kept from
     ADR-2026-012. ``model="ordinal"`` raises ``NotImplementedError`` — a future
     cumulative-link ordered logit with player + role random effects, see
-    ``docs/research/priorart_stage4.md`` §5.
+    ``docs/research/priorart_stage4.md`` §5. ``model="gbm"`` (ADR-2026-078,
+    Stage 5) loads a registered LightGBM base-voto model from
+    ``models.registry``; it raises a clear error when no model is registered yet
+    and is otherwise DEFERRED until the ``ml`` extra is installed offline.
     """
-    if model != "level0":
+    if model == "ordinal":
         raise NotImplementedError(
             "base voto model 'ordinal' (cumulative-link ordered logit with "
             "player + role random effects) is not implemented for v1; see "
             "docs/research/priorart_stage4.md §5."
+        )
+    if model == "gbm":
+        from fantacalcio.models.registry import load as _load_registered_model
+
+        try:
+            _load_registered_model("base_voto_gbm")
+        except FileNotFoundError as exc:
+            raise RuntimeError(
+                "base voto model 'gbm' requested but no model is registered "
+                "under 'base_voto_gbm'; fit and register one with "
+                "scripts/run_base_voto_model.py after `pip install '.[ml]'` "
+                "(ADR-2026-078)."
+            ) from exc
+        raise NotImplementedError(
+            "base voto model 'gbm' registry seam is wired but GBM scoring is "
+            "DEFERRED until the 'ml' extra is installed offline; see "
+            "ADR-2026-078. Use model='level0' (the unchanged default)."
+        )
+    if model != "level0":
+        raise NotImplementedError(
+            f"unknown base voto model {model!r}; expected 'level0', 'gbm' or 'ordinal'."
         )
     pp = np.asarray([_voto_value(x) for x in player_pool], dtype=float)
     rp = np.asarray([_voto_value(x) for x in role_pool], dtype=float)
