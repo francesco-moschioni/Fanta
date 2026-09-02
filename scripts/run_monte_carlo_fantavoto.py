@@ -37,6 +37,16 @@ from fantacalcio.scoring.fvm_prior import (
     load_fvm_lookup,
 )
 from fantacalcio.scoring.monte_carlo import DEFAULT_PRIOR_GAMES, build_event_pools, simulate_fantavoto
+from fantacalcio.scoring.generative import (
+    GenerativeConfig,
+    PlayerSeasonParticipation,
+    default_season_fixtures,
+    simulate_season,
+)
+from fantacalcio.modeling.participation import (
+    compute_season_participation,
+    latest_known_participation,
+)
 from fantacalcio.scoring.xg_propensity import adjust_event_propensity
 from fantacalcio.scoring.team_strength_adjustment import (
     apply_adjustment,
@@ -336,6 +346,69 @@ def part_b_application(rated: pd.DataFrame, *, use_xg: bool = False) -> None:
     print(f"Report: {APPLICATION_REPORT_PATH}")
 
 
+N_SEASON_SIMS = 200
+GENERATIVE_CSV_PATH = Path("data/staged/fantacalcio_voti_manual/_monte_carlo_2026_27_generative.csv")
+
+
+def part_b_generative(rated: pd.DataFrame, voti: pd.DataFrame) -> None:
+    """Engine v2 Stage 4 (ADR-2026-077): season simulator per player.
+
+    Additive to Part B — writes the new seasonal columns (titolare/subentro/
+    no-vote probabilities, minutes distribution summary, downside/upside). The
+    default ``--engine bootstrap`` path is untouched and byte-identical.
+    All optional modules are OFF here (no odds priors, no xG, Level-0 voto):
+    the degradation contract (season mean ~= bootstrap mean x participation)
+    holds by construction.
+    """
+    print("\n=== Part B (generative): season simulator on the 2026/27 roster ===")
+    player_pools, role_pools = build_event_pools(rated)
+
+    part = compute_season_participation(voti)
+    latest = latest_known_participation(part).set_index("player_code")["participation_rate"]
+
+    listone = pd.read_csv(QUOTAZIONI_DIR / "2026_27.csv")
+    fixtures = default_season_fixtures()
+    rows = []
+    for r in listone.itertuples(index=False):
+        code = int(r.player_code)
+        if r.role not in role_pools:
+            continue
+        rate = float(latest.get(code, 0.5))
+        rate = min(max(rate, 0.0), 1.0)
+        keeper = "none"
+        if r.role == "P":
+            keeper = "nailed" if rate >= 0.6 else "backup"
+        cfg = GenerativeConfig(
+            role=r.role,
+            participation=PlayerSeasonParticipation(rate, keeper_status=keeper),
+            player_pools=player_pools,
+            role_pools=role_pools,
+        )
+        res = simulate_season(code, cfg, fixtures, n_sims=N_SEASON_SIMS, base_seed=SEED)
+        rows.append({
+            "player_code": code,
+            "display_name": r.display_name,
+            "role": r.role,
+            "team_name": r.team_name,
+            "season_mean": round(res.mean, 2),
+            "season_median": round(res.median, 2),
+            "season_p10": round(res.p10, 2),
+            "season_p90": round(res.p90, 2),
+            "season_downside": round(res.downside, 2),
+            "season_upside": round(res.upside, 2),
+            "expected_appearances": round(res.expected_appearances, 1),
+            "titolare_prob": round(res.titolare_prob, 3),
+            "subentro_prob": round(res.subentro_prob, 3),
+            "no_vote_prob": round(res.no_vote_prob, 3),
+            "minutes_mean": round(res.minutes_mean, 1),
+            "minutes_p10": round(res.minutes_p10, 1),
+            "minutes_p90": round(res.minutes_p90, 1),
+        })
+    out = pd.DataFrame(rows).sort_values("season_mean", ascending=False)
+    out.to_csv(GENERATIVE_CSV_PATH, index=False)
+    print(f"CSV: {GENERATIVE_CSV_PATH} ({len(out)} players, {N_SEASON_SIMS} season sims each)")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -362,6 +435,20 @@ def main() -> None:
             "A provenance column 'xg_data_present' is always written."
         ),
     )
+    parser.add_argument(
+        "--engine",
+        choices=("bootstrap", "generative"),
+        default="bootstrap",
+        help=(
+            "Engine v2 Stage 4 (ADR-2026-077). 'bootstrap' (DEFAULT) -> output "
+            "byte-identical to today (row-bootstrap single-match). 'generative' "
+            "additionally runs the decomposed season simulator "
+            "(scoring.generative.season) with participation/minutes folded in, "
+            "writing new seasonal columns to a separate CSV. Default stays "
+            "'bootstrap' until the generative engine beats it on seasonal "
+            "CRPS/coverage in rolling-origin backtests."
+        ),
+    )
     args = parser.parse_args()
     if args.odds_priors:
         logging.basicConfig(level=logging.INFO)
@@ -377,6 +464,8 @@ def main() -> None:
 
     part_a_validation(rated)
     part_b_application(rated, use_xg=args.xg)
+    if args.engine == "generative":
+        part_b_generative(rated, voti)
 
 
 if __name__ == "__main__":

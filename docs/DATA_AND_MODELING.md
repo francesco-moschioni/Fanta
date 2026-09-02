@@ -16,14 +16,14 @@ Produrre tre forecast distinti: pre-asta/stagionale, rolling 3–6 giornate e se
 
 Per giocatore-partita stimare con moduli separati ma coerenti:
 
-1. partecipazione e minuti;
-2. gol, assist/xA, assist light e rigori;
-3. scoreline, vittoria/pareggio, clean sheet e gol subiti;
-4. cartellini, autogol e fair play;
-5. voto base, preferibilmente ordinale/gerarchico;
-6. dipendenze fra compagni e avversari.
+1. partecipazione e minuti — **implementato** (ADR-2026-077, `scoring/generative/participation.py`): hurdle a stato `{no-voto, subentro, titolare}` calibrato al tasso di partecipazione, minuti condizionati a stato/ruolo, **sotto-modello portiere dedicato** (nailed ≈ 37–38 presenze bassa varianza / backup ≈ 0–3);
+2. gol, assist/xA, assist light e rigori — **implementato** (`scoring/generative/goals_assists.py`): per-90 Poisson shrinkati verso la media di ruolo, thinning per minuti, blend xG con la forma `n/(n+prior)`, rigori come Bernoulli separata × conversione ~0.77, assist come Binomiale sui gol-squadra campionati;
+3. scoreline, vittoria/pareggio, clean sheet e gol subiti — **implementato** (`scoring/generative/scoreline.py`): **un solo draw `(gf, ga)` per club-partita**, condiviso da tutti i giocatori di quel club nella giornata simulata; grid odds-implied (Stage 2) se fornito, altrimenti Poisson Dixon–Coles, altrimenti fallback empirico;
+4. cartellini, autogol e fair play — **parziale** (`scoring/generative/discipline.py`): tassi per-90 individuali per gialli/rossi/autogol position-keyed. **Il modificatore fair-play / difesa a livello squadra resta BLOCCATO** (`docs/OPEN_QUESTIONS.md`): `team_defensive_modifier` solleva; le ammonizioni per club sono solo registrate per un aggancio futuro;
+5. voto base — **Livello 0 per v1** (ADR-2026-077, `scoring/generative/base_voto.py`): resta lo shrinkage empirical-Bayes attuale; il modello ordinale/gerarchico è una cucitura marcata (`model="ordinal"` → `NotImplementedError`, cfr. prior-art §5);
+6. dipendenze fra compagni e avversari — **v1 minimale** (`scoring/generative/dependencies.py`): l'unico accoppiamento è il draw di scoreline di squadra condiviso + una forza-avversario condivisa. Accoppiamenti più ricchi (autocorrelazione di forma, copule) sono deferiti (ADR-2026-077, rischio 1: esplosione di varianza).
 
-Il motore applica il regolamento a scenari Monte Carlo. Lo stagionale non è la prima giornata moltiplicata per 38.
+Il motore applica il regolamento a scenari Monte Carlo. Lo stagionale non è la prima giornata moltiplicata per 38: `scoring/generative/season.py::simulate_season` campiona un path di presenze sul calendario e porta il termine `Var[S] = E[N]·σ² + Var[N]·μ²` che lo scaling 38× ignora. Seeding gerarchico counter-based `(base_seed, entity, sim, module_id)`. Default `--engine bootstrap` (byte-identico) finché il generativo non batte il bootstrap su CRPS/coverage stagionale in rolling-origin.
 
 ## Baseline e metodi
 
