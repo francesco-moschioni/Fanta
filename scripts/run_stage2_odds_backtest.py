@@ -242,19 +242,40 @@ def main() -> None:
                   f"- Brier: {brier(preds, obs):.4f}",
                   f"- baseline (predict base rate {obs.mean():.3f}): {brier(np.full_like(obs, obs.mean()), obs):.4f}"]
 
-    # ship gate
+    # ship gate (ADR-2026-074, refined after the P-regression fix):
+    #  - conditioned roles (D, and A/C via scale_scoring_propensity) must BEAT the
+    #    scalar shift on CRPS_fair;
+    #  - role P is a deliberate no-op (ADR-2026-023), so it must only NOT REGRESS
+    #    (a tie is the expected, correct outcome -- not a failure);
+    #  - clean-sheet Brier must beat the base-rate baseline.
+    _TOL = 1e-4
     gate_ok = True
     gate_notes = []
-    for role in ("P", "D"):
+    for role in ("D", "C", "A"):
         s = np.mean(crps_acc.get(("scalar", role), [np.nan]))
         o = np.mean(crps_acc.get(("odds", role), [np.nan]))
         if not (o < s):
             gate_ok = False
-            gate_notes.append(f"{role}: odds CRPS_fair {o:.4f} !< scalar {s:.4f}")
+            gate_notes.append(f"{role} (conditioned): odds CRPS_fair {o:.4f} !< scalar {s:.4f}")
+    s_p = np.mean(crps_acc.get(("scalar", "P"), [np.nan]))
+    o_p = np.mean(crps_acc.get(("odds", "P"), [np.nan]))
+    if o_p > s_p + _TOL:
+        gate_ok = False
+        gate_notes.append(f"P (no-op by design): odds CRPS_fair {o_p:.4f} regressed vs scalar {s_p:.4f}")
+    if cs_brier:
+        b_odds = brier(np.array([p for p, _ in cs_brier]), np.array([o for _, o in cs_brier]))
+        b_base = brier(np.full(len(cs_brier), obs.mean()), obs)
+        if not (b_odds < b_base):
+            gate_ok = False
+            gate_notes.append(f"clean-sheet Brier {b_odds:.4f} !< base rate {b_base:.4f}")
     lines += ["", "## Ship gate", "",
-              f"- beats scalar on CRPS_fair for P and D: {'PASS' if gate_ok else 'FAIL'}",
+              f"- conditioned roles (D/C/A) beat the scalar shift, P does not regress, "
+              f"clean-sheet Brier beats base rate: {'PASS' if gate_ok else 'FAIL'}",
               *[f"  - {n}" for n in gate_notes],
-              "- default stays OFF until this gate passes on real data (ADR-2026-074)."]
+              "- On PASS: the odds path is available opt-in via `--odds-priors`. It is NOT flipped to",
+              "  default-on: for the unpriced 2026/27 pre-auction target it degrades to the scalar",
+              "  shift anyway (no fixtures priced), so promotion waits for validation on a priced live",
+              "  season (ADR-2026-074)."]
 
     REPORT_PATH.write_text("\n".join(lines), encoding="utf-8")
     print("\n".join(lines))

@@ -94,6 +94,18 @@ def test_length_mismatch_raises():
                           historical_rows=rows[:-1], role="D")
 
 
+def test_goalkeeper_role_is_a_noop(caplog):
+    """P is deliberately excluded (ADR-2026-023 / ADR-2026-074 P-regression fix):
+    condition_samples returns the input unchanged for a keeper, no matter the target."""
+    result, rows, _ = _ensemble()
+    strong = np.array([0.9, 0.1, 0, 0, 0, 0, 0, 0], dtype=float)
+    with caplog.at_level(logging.INFO, logger="fantacalcio.scoring.odds_conditioning"):
+        out = condition_samples(result, target_conceded_pmf=strong, historical_rows=rows,
+                                role="P", rng=np.random.default_rng(0))
+    assert out is result
+    assert any("not conditioned" in r.message for r in caplog.records)
+
+
 def test_scale_scoring_propensity_monotone_in_ratio():
     rng = np.random.default_rng(0)
     scored = rng.random(N) < 0.3

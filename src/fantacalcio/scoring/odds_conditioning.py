@@ -25,7 +25,15 @@ from .monte_carlo import DEFAULT_SEED, HistoricalRow, SimulationResult
 
 logger = logging.getLogger(__name__)
 
-CONDITION_ROLES = frozenset({"P", "D"})
+# Only defenders are conditioned on the odds-implied goals-conceded marginal.
+# Goalkeepers are deliberately excluded: ADR-2026-023 already found team-strength
+# adjustment makes GK agreement with real Fm *worse* (k=0 for GK), and the Stage 2
+# rolling-origin backtest (ADR-2026-074) confirmed the same for odds conditioning
+# -- the P arm regressed on CRPS_fair. A keeper's fantavoto variance is dominated
+# by saves / penalties, not by team goals conceded, so `condition_samples` is a
+# no-op for role "P" (matches `team_strength_adjustment.apply_adjustment`, which
+# also skips GK).
+CONDITION_ROLES = frozenset({"D"})
 SCORING_ROLES = frozenset({"A", "C"})
 _ESS_FLOOR_FRACTION = 0.10
 # Fantavoto goal bonus (docs/SCORING_RULES.md): +3 for every role. Used only by
@@ -64,7 +72,13 @@ def condition_samples(
     an SIR resample of size ``n`` is drawn with ``rng``. Effective sample size is
     logged. If ESS < 10% of ``n`` (or the weights degenerate to zero) the input
     ``result`` is returned unchanged with a warning -- no silent degradation.
+
+    Role ``"P"`` (goalkeeper) is a deliberate no-op -- see :data:`CONDITION_ROLES`.
     """
+    if role not in CONDITION_ROLES:
+        logger.info("condition_samples: role %s not conditioned (see CONDITION_ROLES); returning unchanged", role)
+        return result
+
     samples = np.asarray(result.samples, dtype=float)
     n = samples.size
     if len(historical_rows) != n:
