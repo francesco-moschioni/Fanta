@@ -83,6 +83,36 @@ FVM_N_BUCKETS = 4
 UNDERSTAT_STAGED_DIR = Path("data/staged/understat")
 XG_SCORING_ROLES = {"A", "C"}
 
+WHOSCORED_STAGED_DIR = Path("data/staged/whoscored")
+
+
+def _load_availability(listone: pd.DataFrame, *, as_of: pd.Timestamp) -> dict[int, float]:
+    """player_code -> availability_prob from staged WhoScored missing-player feeds.
+
+    Absent-safe: returns {} when no WhoScored data has been ingested, so the
+    generative pass is byte-identical to Stage 4. Names are resolved
+    role-constrained via the identity resolver; unresolved names are skipped
+    (never guessed).
+    """
+    if not WHOSCORED_STAGED_DIR.is_dir():
+        return {}
+    files = sorted(WHOSCORED_STAGED_DIR.glob("whoscored_missing_players_*.csv"))
+    if not files:
+        return {}
+    from fantacalcio.features.availability import player_availability
+
+    frame = pd.concat([pd.read_csv(f) for f in files], ignore_index=True)
+    anchors = listone[["player_code", "display_name", "role"]].copy()
+    long_df, _review = player_availability(
+        frame, as_of=as_of, anchor_players=anchors, season="2026_27"
+    )
+    if long_df.empty:
+        return {}
+    return {
+        int(r.entity_id): float(r.value)
+        for r in long_df.itertuples(index=False)
+    }
+
 
 def _load_xg_rates(listone: pd.DataFrame) -> dict[int, tuple[float, float]]:
     """player_code -> (xg_goal_rate, xg_assist_rate) from staged Understat data.
@@ -350,7 +380,7 @@ N_SEASON_SIMS = 200
 GENERATIVE_CSV_PATH = Path("data/staged/fantacalcio_voti_manual/_monte_carlo_2026_27_generative.csv")
 
 
-def part_b_generative(rated: pd.DataFrame, voti: pd.DataFrame) -> None:
+def part_b_generative(rated: pd.DataFrame, voti: pd.DataFrame, *, use_availability: bool = False) -> None:
     """Engine v2 Stage 4 (ADR-2026-077): season simulator per player.
 
     Additive to Part B — writes the new seasonal columns (titolare/subentro/
@@ -368,6 +398,17 @@ def part_b_generative(rated: pd.DataFrame, voti: pd.DataFrame) -> None:
 
     listone = pd.read_csv(QUOTAZIONI_DIR / "2026_27.csv")
     fixtures = default_season_fixtures()
+
+    # Stage 7 (ADR-2026-079): next-matchday availability cap from a manually
+    # imported WhoScored feed. DEFAULT OFF; absent feed -> {} -> byte-identical.
+    avail_map: dict[int, float] = {}
+    if use_availability:
+        from fantacalcio.features.availability import apply_availability_to_participation
+
+        avail_map = _load_availability(listone, as_of=pd.Timestamp("2026-08-24"))
+        print(f"--availability: WhoScored availability loaded for {len(avail_map)} player(s) "
+              f"({'no staged WhoScored data -> no-op' if not avail_map else 'first-matchday start prob capped'}).")
+
     rows = []
     for r in listone.itertuples(index=False):
         code = int(r.player_code)
@@ -384,12 +425,19 @@ def part_b_generative(rated: pd.DataFrame, voti: pd.DataFrame) -> None:
             player_pools=player_pools,
             role_pools=role_pools,
         )
-        res = simulate_season(code, cfg, fixtures, n_sims=N_SEASON_SIMS, base_seed=SEED)
+        fmp = None
+        if code in avail_map:
+            fmp = apply_availability_to_participation(cfg.participation, avail_map[code])
+        res = simulate_season(
+            code, cfg, fixtures, n_sims=N_SEASON_SIMS, base_seed=SEED,
+            first_md_participation=fmp,
+        )
         rows.append({
             "player_code": code,
             "display_name": r.display_name,
             "role": r.role,
             "team_name": r.team_name,
+            "availability_report_present": bool(code in avail_map),
             "season_mean": round(res.mean, 2),
             "season_median": round(res.median, 2),
             "season_p10": round(res.p10, 2),
@@ -436,6 +484,18 @@ def main() -> None:
         ),
     )
     parser.add_argument(
+        "--availability",
+        action="store_true",
+        help=(
+            "Engine v2 Stage 7 (ADR-2026-079). With --engine generative, load a "
+            "manually-imported WhoScored injuries/suspensions feed from "
+            "data/staged/whoscored/ and cap each player's FIRST-matchday start "
+            "probability at the reported availability (later matchdays keep the "
+            "season rate). DEFAULT OFF. Absent feed -> no-op, output identical to "
+            "Stage 4. A provenance column 'availability_report_present' is written."
+        ),
+    )
+    parser.add_argument(
         "--engine",
         choices=("bootstrap", "generative"),
         default="bootstrap",
@@ -465,7 +525,7 @@ def main() -> None:
     part_a_validation(rated)
     part_b_application(rated, use_xg=args.xg)
     if args.engine == "generative":
-        part_b_generative(rated, voti)
+        part_b_generative(rated, voti, use_availability=args.availability)
 
 
 if __name__ == "__main__":

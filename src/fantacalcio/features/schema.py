@@ -293,6 +293,17 @@ FEATURE_REGISTRY: dict[str, FeatureSpec] = dict(
             "end of the Understat season the aggregate covers",
             "C",
         ),
+        # --- availability (ingest.whoscored, Stage 7) ----------------------
+        _spec(
+            "availability_prob",
+            "float64",
+            "Probability the player is available for the next matchday, from a "
+            "manually-imported WhoScored injuries/suspensions report; no row => "
+            "caller falls back to the season participation rate.",
+            "whoscored",
+            "the WhoScored report timestamp (available_time per row)",
+            "C",
+        ),
     ]
 )
 

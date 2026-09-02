@@ -58,6 +58,28 @@ Template per fonte (da completare al primo import reale): URL, campi, ufficialit
 | Stato | parser + feature + wiring MC spediti **absent-safe, default OFF** (ADR-2026-075); in attesa del primo export reale per il gate |
 | Feature prodotte | `xg_per90_shrunk, npxg_per90_shrunk, xa_per90_shrunk, shots_per90_shrunk, minutes_understat, xg_overperformance_shrunk` (tier C, `features/xg_features.py`) |
 
+### WhoScored — riga template (parser committato, primo import reale ancora da fare)
+
+| Voce | Valore |
+|---|---|
+| URL | `https://www.whoscored.com/...` — pagine infortuni/squalifiche per lega e probabili formazioni per match, salvate a mano dal browser dell'owner |
+| Campi | infortuni/squalifiche: `player_name, team, status (out/doubtful/suspended/available), reason, expected_return, report_time`, ruolo/posizione se presente; probabili: `player_name, team, is_probable_starter` |
+| Ufficialità | non ufficiale; report editoriale + dati Opta |
+| Metodo accesso | **manuale**: pagina salvata a mano; parsing offline con `ingest/whoscored.py` (puro, zero HTTP, JSON decodificato o HTML con blob `var x = {...};` / `JSON.parse('...')`). Fetch opzionale via script standalone `ingest/whoscored_fetch.py` (rate-limit ≥5 s, cache, mai in pipeline/CI — test statico) |
+| ToS/robots | i ToS WhoScored vietano la raccolta automatizzata — riconosciuto, non aggirato in automatico; deroga uso personale ADR-2026-070 |
+| Data verifica | 2026-09-02 (ADR-2026-079) |
+| Refresh | manuale on-demand |
+| Raw snapshot | locale in `data/raw/whoscored/` (gitignored), immutabile+checksummed via `ingest/snapshot.write_snapshot` |
+| Mapping ID | `identity/player_name_resolver.resolve_against_anchor` role-constrained; ambigui/omonimi stesso ruolo → coda review, mai `player_code` inventato |
+| Fallback | assenza report → nessuna riga feature `availability_prob` → `scoring/generative` usa il tasso di partecipazione stagionale (degradazione = no-op) |
+| Coverage | solo i giocatori con un evento infortunio/squalifica/dubbio nel report; il resto è implicitamente "disponibile al tasso di stagione" |
+| Errori osservati | nessuno (nessun export reale ancora processato; parser difensivo, assunzioni sul formato JSON incorporato documentate nel docstring di `ingest/whoscored.py`) |
+| Stato | parser + feature `availability` + wiring nella partecipazione generativa spediti **absent-safe, default OFF** (ADR-2026-079); in attesa del primo export reale |
+| Feature prodotte | `availability_prob` (tier B per squalifiche, C per infortuni/dubbio; `features/availability.py`) |
+| Quality tier | B = squalifica (fattuale); C = infortunio/dubbio |
+| `available_time` | timestamp del report |
+| Spike VAEP/xT | **DEFERITO** — `socceraction` non installabile offline; quando eseguibile resta uno script scratchpad su StatsBomb open 2015/16 il cui risultato va in un ADR di follow-up, mai codice/dipendenza committati |
+
 ## Gerarchia per campo
 
 | Campo | Fonte prevalente |

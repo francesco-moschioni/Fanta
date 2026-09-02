@@ -231,6 +231,54 @@ def _xg_anchors() -> pd.DataFrame:
     )
 
 
+def _missing_players() -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "player_name": ["Rossi", "Bianchi"],
+            "role": ["A", "C"],
+            "status": ["suspended", "doubtful"],
+            "reason": ["cards", "knock"],
+            "expected_return": [None, None],
+            "report_time": ["2026-08-20", "2026-08-20"],
+        }
+    )
+
+
+def _availability_anchors() -> pd.DataFrame:
+    return pd.DataFrame(
+        {"player_code": [101, 102], "display_name": ["Rossi", "Bianchi"], "role": ["A", "C"]}
+    )
+
+
+def test_build_availability_features_valid_and_tier_and_leakage():
+    from fantacalcio.features.build import build_availability_features
+    from fantacalcio.features.leakage import assert_available_before_decision
+
+    frame, review = build_availability_features(
+        _missing_players(),
+        _availability_anchors(),
+        as_of=pd.Timestamp("2026-08-24"),
+    )
+    _assert_valid(frame)
+    assert review == []
+    assert set(frame["feature_name"]) == {"availability_prob"}
+    assert frame["source_name"].eq("whoscored").all()
+    assert set(frame["quality_tier"]) == {"B", "C"}
+    assert frame.loc[frame["entity_id"] == "101", "value"].iloc[0] == 0.0
+    assert_available_before_decision(frame, pd.Timestamp("2026-08-24"))
+
+
+def test_build_all_features_dispatch_includes_availability():
+    out = build_all_features(
+        missing_players=_missing_players(),
+        availability_anchor_players=_availability_anchors(),
+        availability_as_of=pd.Timestamp("2026-08-24"),
+        target_season="2026_27",
+    )
+    assert "availability" in out
+    _assert_valid(out["availability"])
+
+
 def test_build_all_features_dispatch_includes_xg():
     out = build_all_features(
         understat_season=_understat_season(),

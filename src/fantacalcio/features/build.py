@@ -30,10 +30,11 @@ from fantacalcio.modeling.time_decay import (
     add_global_matchday_index,
     add_recency_weight,
 )
+from fantacalcio.features.availability import player_availability
 from fantacalcio.features.xg_features import build_xg_features
 from fantacalcio.scoring.fvm_prior import assign_bucket, fit_fvm_bucket_edges
 
-__all__ = ["build_xg_features"]  # re-exported; real logic in features.xg_features
+__all__ = ["build_xg_features", "build_availability_features"]
 
 _OUTPUT_COLUMNS = VALUE_COLUMNS + LINEAGE_COLUMNS
 
@@ -477,6 +478,36 @@ def build_listone_features(
 
 
 # --------------------------------------------------------------------------- #
+# availability (Stage 7)                                                      #
+# --------------------------------------------------------------------------- #
+def build_availability_features(
+    missing_players: pd.DataFrame,
+    anchor_players,
+    *,
+    as_of: pd.Timestamp,
+    horizon_days: int = 7,
+    target_season: str = "2026_27",
+    ingested_time: pd.Timestamp | None = None,
+) -> tuple[pd.DataFrame, list]:
+    """Per-player next-matchday availability from a WhoScored missing-players feed.
+
+    Thin wrapper over ``features.availability.player_availability`` (all the
+    logic lives there): resolves names role-constrained via
+    ``identity.player_name_resolver``, returns the long-format feature frame
+    plus the identity review queue. An empty / absent feed yields an empty
+    frame (degradation contract).
+    """
+    return player_availability(
+        missing_players,
+        as_of=as_of,
+        horizon_days=horizon_days,
+        anchor_players=anchor_players,
+        season=target_season,
+        ingested_time=ingested_time,
+    )
+
+
+# --------------------------------------------------------------------------- #
 # top-level orchestration                                                     #
 # --------------------------------------------------------------------------- #
 def build_all_features(
@@ -492,6 +523,9 @@ def build_all_features(
     admin_ranks: pd.DataFrame | None = None,
     understat_season: pd.DataFrame | None = None,
     understat_anchor_players: pd.DataFrame | None = None,
+    missing_players: pd.DataFrame | None = None,
+    availability_anchor_players: pd.DataFrame | None = None,
+    availability_as_of: pd.Timestamp | None = None,
     target_season: str = "2026_27",
     ingested_time: pd.Timestamp | None = None,
 ) -> dict[str, pd.DataFrame]:
@@ -533,4 +567,16 @@ def build_all_features(
             understat_season, understat_anchor_players, ingested_time=ingested_time
         )
         out["xg"] = xg_frame
+    if missing_players is not None and availability_anchor_players is not None:
+        as_of = availability_as_of
+        if as_of is None:
+            as_of = _season_start(target_season)
+        avail_frame, _review_queue = build_availability_features(
+            missing_players,
+            availability_anchor_players,
+            as_of=as_of,
+            target_season=target_season,
+            ingested_time=ingested_time,
+        )
+        out["availability"] = avail_frame
     return out

@@ -85,7 +85,7 @@ Stage 6 (ADR-2026-076, Engine v2 — tutti i pezzi **additivi, path di default b
 
 ## Degradazione controllata
 
-Senza target Fantacalcio omogeneo: output `proxy fantasy`; xG da import manuale Understat quando presente (ADR-2026-075: per-90 shrinkato + propensione gol/assist nel Monte Carlo via `scoring/xg_propensity.py`), altrimenti per-90 shrinkato senza xG; senza feed infortuni: stato manuale. La UI espone modulo attivo, timestamp e impatto sulla confidenza.
+Senza target Fantacalcio omogeneo: output `proxy fantasy`; xG da import manuale Understat quando presente (ADR-2026-075: per-90 shrinkato + propensione gol/assist nel Monte Carlo via `scoring/xg_propensity.py`), altrimenti per-90 shrinkato senza xG; feed infortuni via import manuale WhoScored quando presente (ADR-2026-079: `features/availability.py` → cap della probabilità di titolarità della prossima giornata in `scoring/generative/participation.py`), altrimenti stato manuale. La UI espone modulo attivo, timestamp e impatto sulla confidenza.
 
 xG nel Monte Carlo (ADR-2026-075, Engine v2 Stage 3, **default OFF**):
 

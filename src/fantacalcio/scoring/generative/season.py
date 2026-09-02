@@ -192,6 +192,7 @@ def simulate_season(
     club_id: int | None = None,
     active_modules: Sequence[str] = (),
     team_priors: Sequence[TeamMatchPrior | None] | None = None,
+    first_md_participation: PlayerSeasonParticipation | None = None,
 ) -> SeasonSimResult:
     """Monte-Carlo a player's season over ``fixtures``.
 
@@ -237,7 +238,18 @@ def simulate_season(
 
     for s in range(n_sims):
         r_part = module_rng(base_seed, player_code, s, MODULE_PARTICIPATION)
-        status = sample_appearance(config.participation, role, n_md, r_part)
+        if first_md_participation is None:
+            status = sample_appearance(config.participation, role, n_md, r_part)
+        else:
+            # Stage 7: an availability report caps the first fixture only; later
+            # matchdays keep the season rate. Only reached when a real report
+            # exists for this player, so the default path stays byte-identical.
+            s0 = sample_appearance(first_md_participation, role, 1, r_part)
+            if n_md > 1:
+                s_rest = sample_appearance(config.participation, role, n_md - 1, r_part)
+                status = np.concatenate([s0, s_rest])
+            else:
+                status = s0
 
         r_min = module_rng(base_seed, player_code, s, MODULE_MINUTES)
         minutes = sample_minutes(status, role, r_min)
