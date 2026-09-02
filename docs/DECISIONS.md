@@ -887,6 +887,27 @@ La decisione approvata più recente e applicabile prevale. Appendere; non riscri
 - Conseguenze: nuovo package `src/fantacalcio/scoring/generative/` (9 moduli: `__init__`, `_seed`, `participation`, `goals_assists`, `scoreline`, `discipline`, `base_voto`, `dependencies`, `season`); `scripts/run_monte_carlo_fantavoto.py` +`--engine` +`part_b_generative`. 6 nuovi file di test (`tests/test_generative_{participation,goals_assists,scoreline,discipline,base_voto,season}.py`), **36 nuovi test, 645 totali passano, 1 skipped**. `scoring/engine.py`, le pagine d'asta live e il ledger non toccati. Nessun merge su `fanta`.
 - Approvato da: project owner (piano "Engine v2" approvato)
 
+#### Addendum 2026-09-02 — Stage 4 promotion gate eseguito
+
+Stage 4 promotion gate eseguito su stagioni concluse 2022/23–2025/26 con calendari reali football-data.co.uk (`scripts/run_stage4_generative_backtest.py`, report gitignored `data/staged/fantacalcio_voti_manual/_stage4_generative_backtest.md`). Rolling-origin: pool eventi + tassi di partecipazione (`latest_known_participation`) solo da stagioni **strettamente precedenti** S; calendario reale per squadra da `serie_a_<code>.csv` (matchday = rango cronologico); target realizzato = **somma stagionale** del fantavoto del nostro motore deterministico sulle giornate votate (componenti individuali confermate, non l'Fm di Fantacalcio.it — grandezza confrontabile like-for-like con ciò che il simulatore produce). Campione stratificato 40 giocatori/ruolo/stagione (640 player-season), 500 sim/giocatore, seed 42, `active_modules=("scoreline",)` (unico modulo opzionale con input disponibili senza quote/xG). 78 player-season senza riga quotazioni (acquisti/promozioni a stagione in corso) → fallback a `default_season_fixtures` neutro; tutte e 20 le squadre di ogni stagione matchate su football-data. Runtime 4.1 min.
+
+Arm: (a) generativo `simulate_season` su calendario reale; (b) naive-38x = ensemble composto `N~Binomial(n_fixtures, rate)`, totale = somma di N pescate i.i.d. dal bootstrap single-match; (c) boot×part = punto `n_fixtures·rate·media_single_match` (ensemble degenere, solo riferimento).
+
+| ruolo | n | CRPS_fair gen | CRPS_fair naive-38x | coverage P10–P90 gen | coverage naive | media presenze sim | media presenze reali |
+|---|--:|--:|--:|--:|--:|--:|--:|
+| P | 160 | 45.38 | 36.06 | 0.356 | 0.394 | 13.3 | 15.9 |
+| D | 160 | 46.35 | 46.34 | 0.269 | 0.263 | 21.1 | 19.7 |
+| C | 160 | 53.09 | 53.18 | 0.231 | 0.225 | 21.4 | 20.5 |
+| A | 160 | 59.68 | 59.81 | 0.231 | 0.212 | 21.8 | 19.5 |
+| **tutti** | 640 | **51.12** | **48.85** | 0.272 | 0.273 | — | — |
+| titolari fissi (presenze reali ≥ 30) | 172 | — | — | — | — | 24.9 | 33.7 (bias sim−reale **−8.80**) |
+
+**Verdetto: FAIL.** Check falliti: CRPS_fair overall (gen 51.12 ≮ naive 48.85); CRPS_fair D (praticamente pari, 46.347 vs 46.339); CRPS_fair P (gen 45.38 regredisce nettamente vs naive 36.06); coverage P10–P90 ~0.27 vs nominale 0.80 (entrambi gli arm gravemente sotto-dispersi a livello stagionale); bias presenze titolari fissi −8.80 (soglia < 3). Passano solo CRPS_fair C e A (margine minimo, ~0.1%).
+
+Cause probabili: (1) il sotto-modello portiere dedicato, alimentato dal tasso di partecipazione della sola stagione precedente con soglia netta 0.6 nailed/backup, classifica "backup" (start 0.03) molti portieri poi titolari in S → presenze P fortemente sottostimate e CRPS P peggiore del naive, che usa il tasso grezzo in `Binomial(38, rate)`; (2) `active_modules=("scoreline",)` non incide su C/A (i gol subiti non entrano nel loro punteggio) e con `TeamMatchPrior=None` è solo il draw lega-media, quindi il guadagno generativo è tutto struttura minuti/conteggio; (3) a livello di **totale stagionale** entrambi gli arm sono molto sotto-dispersi OOS (MAE 50–70 punti), la partecipazione stimata dalla sola ultima stagione è un input debole per il conteggio presenze.
+
+**Decisione: `--engine generative` resta opt-in, default `--engine bootstrap` invariato; il gate NON è superato.** Nessun auto-flip. Ripetere il gate quando: (a) il calendario 2026/27 reale è cablato (sostituisce `default_season_fixtures`); (b) l'input di partecipazione usa più stagioni / uno stimatore che regredisce verso la media di ruolo invece della sola ultima stagione; (c) la soglia portiere nailed/backup è continua o calibrata. Additivo: nessun path d'asta live/ledger toccato, nessun merge su `fanta`.
+
 ### ADR-2026-078 — Engine v2 Stage 5: registro `models/` (livello 5) + path boosting per il voto base (GUARDATO) + harness di ablation per fonte/tier
 
 - Data: 2026-09-02
