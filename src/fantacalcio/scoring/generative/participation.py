@@ -34,12 +34,15 @@ import numpy as np
 KEEPER_NONE = "none"
 KEEPER_NAILED = "nailed"
 KEEPER_BACKUP = "backup"
+KEEPER_RATE = "rate"  # keeper minutes behaviour (90 or 0, no cameo), start prob = the participation rate
 
-# Keeper branch constants (priorart §1: low in-season switch hazard).
-_NAILED_P_START = 0.97
-_NAILED_P_BENCH = 0.0
-_BACKUP_P_START = 0.03
-_BACKUP_P_BENCH = 0.005
+# Keeper branch: a keeper essentially never comes on as a sub, and a first/second
+# choice designation acts as a floor/ceiling ON the observed rate rather than
+# replacing it -- so a misclassification (Stage 4 gate FAIL 2026-09-02, ADR-2026-077
+# addendum) is no longer catastrophic. ``KEEPER_RATE`` trusts the rate outright.
+_NAILED_P_START_FLOOR = 0.90
+_BACKUP_P_START_CEIL = 0.10
+_KEEPER_RATE_LO, _KEEPER_RATE_HI = 0.02, 0.98
 
 _DEFAULT_START_SHARE = 0.85
 
@@ -72,20 +75,27 @@ class PlayerSeasonParticipation:
             raise ValueError(f"participation_rate must be in [0, 1]; got {self.participation_rate}")
         if not 0.0 <= self.start_share <= 1.0:
             raise ValueError(f"start_share must be in [0, 1]; got {self.start_share}")
-        if self.keeper_status not in (KEEPER_NONE, KEEPER_NAILED, KEEPER_BACKUP):
+        if self.keeper_status not in (KEEPER_NONE, KEEPER_NAILED, KEEPER_BACKUP, KEEPER_RATE):
             raise ValueError(f"unknown keeper_status {self.keeper_status!r}")
 
 
 def _status_probs(feat: PlayerSeasonParticipation) -> tuple[float, float, float]:
-    """Return ``(p_start, p_bench, p_unused)`` for one fixture."""
+    """Return ``(p_start, p_bench, p_unused)`` for one fixture.
+
+    Keeper branches never produce a bench cameo (``p_bench = 0``); the
+    designation, when given, bounds the observed participation rate rather than
+    overriding it.
+    """
+    rate = float(np.clip(feat.participation_rate, 0.0, 1.0))
     if feat.keeper_status == KEEPER_NAILED:
-        p_start, p_bench = _NAILED_P_START, _NAILED_P_BENCH
+        p_start, p_bench = max(rate, _NAILED_P_START_FLOOR), 0.0
     elif feat.keeper_status == KEEPER_BACKUP:
-        p_start, p_bench = _BACKUP_P_START, _BACKUP_P_BENCH
+        p_start, p_bench = min(rate, _BACKUP_P_START_CEIL), 0.0
+    elif feat.keeper_status == KEEPER_RATE:
+        p_start, p_bench = float(np.clip(rate, _KEEPER_RATE_LO, _KEEPER_RATE_HI)), 0.0
     else:
-        p_app = float(np.clip(feat.participation_rate, 0.0, 1.0))
-        p_start = p_app * feat.start_share
-        p_bench = p_app * (1.0 - feat.start_share)
+        p_start = rate * feat.start_share
+        p_bench = rate * (1.0 - feat.start_share)
     p_unused = max(0.0, 1.0 - p_start - p_bench)
     return p_start, p_bench, p_unused
 
@@ -166,6 +176,7 @@ __all__ = [
     "KEEPER_NONE",
     "KEEPER_NAILED",
     "KEEPER_BACKUP",
+    "KEEPER_RATE",
     "sample_appearance",
     "sample_minutes",
     "simulate_appearance_counts",

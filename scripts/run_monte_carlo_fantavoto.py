@@ -45,6 +45,7 @@ from fantacalcio.scoring.generative import (
 )
 from fantacalcio.modeling.participation import (
     compute_season_participation,
+    decayed_participation_estimate,
     latest_known_participation,
 )
 from fantacalcio.scoring.xg_propensity import adjust_event_propensity
@@ -395,6 +396,11 @@ def part_b_generative(rated: pd.DataFrame, voti: pd.DataFrame, *, use_availabili
 
     part = compute_season_participation(voti)
     latest = latest_known_participation(part).set_index("player_code")["participation_rate"]
+    # Multi-season recency-weighted rate (Stage 4 gate fix 2026-09-02, ADR-2026-077
+    # addendum): single-prior-season participation under-predicted appearances.
+    decayed = decayed_participation_estimate(part, half_life_seasons=1.5).set_index(
+        "player_code"
+    )["decayed_participation_rate"]
 
     listone = pd.read_csv(QUOTAZIONI_DIR / "2026_27.csv")
     fixtures = default_season_fixtures()
@@ -414,11 +420,9 @@ def part_b_generative(rated: pd.DataFrame, voti: pd.DataFrame, *, use_availabili
         code = int(r.player_code)
         if r.role not in role_pools:
             continue
-        rate = float(latest.get(code, 0.5))
+        rate = float(decayed.get(code, latest.get(code, 0.5)))
         rate = min(max(rate, 0.0), 1.0)
-        keeper = "none"
-        if r.role == "P":
-            keeper = "nailed" if rate >= 0.6 else "backup"
+        keeper = "rate" if r.role == "P" else "none"  # rate-driven keeper, no hard nailed/backup split
         cfg = GenerativeConfig(
             role=r.role,
             participation=PlayerSeasonParticipation(rate, keeper_status=keeper),

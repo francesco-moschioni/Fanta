@@ -36,22 +36,38 @@ def test_minutes_zero_when_unused_and_bounded():
     assert 15.0 <= m[2] <= 90.0
 
 
-def test_keeper_nailed_starts_full_low_variance():
+def test_keeper_nailed_designation_is_a_floor_on_the_rate():
+    # A "nailed" keeper whose observed rate is only 0.5 still gets the 0.90 floor
+    # (the designation bounds the data, it does not override it) -> plays most of
+    # the season with low variance, but a misclassification is no longer 0.97.
     feat = PlayerSeasonParticipation(0.5, keeper_status=KEEPER_NAILED)
     counts = simulate_appearance_counts(feat, "P", 38, 600, np.random.default_rng(5))
-    assert 36.0 <= counts.mean() <= 38.0
-    assert counts.std() < 2.0
-    # minutes for a nailed keeper's starts are a flat 90 (near-zero variance).
+    assert 32.0 <= counts.mean() <= 37.0
+    assert counts.std() < 2.5
+    # a keeper whose rate is already high keeps that higher rate
+    hi = PlayerSeasonParticipation(0.97, keeper_status=KEEPER_NAILED)
+    assert simulate_appearance_counts(hi, "P", 38, 400, np.random.default_rng(5)).mean() >= 35.0
+    # minutes for a keeper's starts are a flat 90 (near-zero variance).
     status = sample_appearance(feat, "P", 38, np.random.default_rng(9))
     m = sample_minutes(status, "P", np.random.default_rng(9))
     assert set(np.unique(m[status == 2])) == {90.0}
 
 
 def test_keeper_backup_barely_plays():
-    feat = PlayerSeasonParticipation(0.5, keeper_status=KEEPER_BACKUP)
+    feat = PlayerSeasonParticipation(0.05, keeper_status=KEEPER_BACKUP)
     counts = simulate_appearance_counts(feat, "P", 38, 600, np.random.default_rng(6))
     assert counts.mean() < 3.0
-    assert np.percentile(counts, 90) <= 3.0
+    assert np.percentile(counts, 90) <= 4.0
+
+
+def test_keeper_rate_follows_the_participation_rate():
+    from fantacalcio.scoring.generative.participation import KEEPER_RATE
+
+    feat = PlayerSeasonParticipation(0.70, keeper_status=KEEPER_RATE)
+    counts = simulate_appearance_counts(feat, "P", 38, 800, np.random.default_rng(11))
+    assert abs(counts.mean() - 0.70 * 38) < 2.0  # tracks the rate, no hard classification
+    status = sample_appearance(feat, "P", 38, np.random.default_rng(3))
+    assert set(np.unique(status)).issubset({0, 2})  # keepers never cameo
 
 
 def test_invalid_inputs_raise():

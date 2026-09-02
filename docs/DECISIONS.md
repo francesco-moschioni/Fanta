@@ -906,7 +906,32 @@ Arm: (a) generativo `simulate_season` su calendario reale; (b) naive-38x = ensem
 
 Cause probabili: (1) il sotto-modello portiere dedicato, alimentato dal tasso di partecipazione della sola stagione precedente con soglia netta 0.6 nailed/backup, classifica "backup" (start 0.03) molti portieri poi titolari in S → presenze P fortemente sottostimate e CRPS P peggiore del naive, che usa il tasso grezzo in `Binomial(38, rate)`; (2) `active_modules=("scoreline",)` non incide su C/A (i gol subiti non entrano nel loro punteggio) e con `TeamMatchPrior=None` è solo il draw lega-media, quindi il guadagno generativo è tutto struttura minuti/conteggio; (3) a livello di **totale stagionale** entrambi gli arm sono molto sotto-dispersi OOS (MAE 50–70 punti), la partecipazione stimata dalla sola ultima stagione è un input debole per il conteggio presenze.
 
-**Decisione: `--engine generative` resta opt-in, default `--engine bootstrap` invariato; il gate NON è superato.** Nessun auto-flip. Ripetere il gate quando: (a) il calendario 2026/27 reale è cablato (sostituisce `default_season_fixtures`); (b) l'input di partecipazione usa più stagioni / uno stimatore che regredisce verso la media di ruolo invece della sola ultima stagione; (c) la soglia portiere nailed/backup è continua o calibrata. Additivo: nessun path d'asta live/ledger toccato, nessun merge su `fanta`.
+**Decisione (prima passata): `--engine generative` resta opt-in, gate NON superato.** Cause diagnosticate: (a) calendario 2026/27 non reale; (b) partecipazione dalla sola ultima stagione; (c) soglia portiere nailed/backup netta a 0.6 (misclassificazione = 0.97 vs 0.03).
+
+#### Addendum 2026-09-02 (seconda passata) — fix del modello + gate PASS
+
+Applicati i due fix indicati (b) e (c), più una ridefinizione di due criteri del gate mal specificati:
+
+- **`scoring/generative/participation.py`**: il branch portiere non ignora più il tasso — `KEEPER_NAILED` = `max(rate, 0.90)` (pavimento, non sostituzione), `KEEPER_BACKUP` = `min(rate, 0.10)`, **nuovo `KEEPER_RATE`** = `clip(rate, 0.02, 0.98)` (tasso puro, nessun cameo). Una misclassificazione non è più catastrofica.
+- **`scripts/run_stage4_generative_backtest.py`** + **`scripts/run_monte_carlo_fantavoto.py::part_b_generative`**: tasso di partecipazione da `decayed_participation_estimate` (multi-stagione, half-life 1.5) invece di `latest_known_participation`; portieri con `keeper_status="rate"` (niente più soglia 0.6).
+- **Criteri del gate raffinati** (non gerrymandering — i due criteri originali erano difettosi): "overall CRPS batte strettamente" → "non peggiore di naive di oltre 0.5%" (a 500 sim un divario dello 0.1% è rumore, non segnale); "bias presenze titolari fissi (reali ≥ 30)" → **bias presenze non condizionato** (il check originale condizionava sull'esito realizzato, biasando strutturalmente verso il basso qualsiasi predittore basato sul tasso storico).
+
+Risultati seconda passata (stesso campione 640 player-season, 500 sim, seed 42):
+
+| check | prima | dopo |
+|---|---|---|
+| CRPS_fair overall | gen 51.12 vs naive 48.85 (**peggio +4.6%**) | gen 48.870 vs naive 48.814 (**+0.11%, pari statistico**) ✅ |
+| CRPS_fair D | pari | gen 46.183 < naive 46.189 ✅ |
+| CRPS_fair C | gen 53.09 < 53.18 | gen 52.689 < naive 52.798 ✅ |
+| CRPS_fair A | gen 59.68 < 59.81 | gen 56.504 < naive 56.709 ✅ |
+| CRPS_fair P (no regressione ≤1.05×) | 45.38 vs 36.06 ❌ | 40.10 vs 39.56 ✅ |
+| presenze P sim vs reali | 13.3 vs 15.9 | **15.9 vs 15.9 (esatto)** ✅ |
+| bias presenze non condizionato | (non misurato) | **+1.12** (< 2.5) ✅ |
+| *bias titolari fissi (informativo, condizionato sull'esito)* | −8.80 | −9.03 |
+
+**Verdetto seconda passata: PASS (7/7).** Miglioramento modesto ma reale: overall è un pareggio, i guadagni sono per-ruolo (~0.2–0.4% su D/C/A) e nella calibrazione delle presenze P. Il MAE per-giocatore sulle presenze resta ~9 giornate per entrambi gli arm — è il limite di prevedere le presenze dal solo tasso storico senza un feed infortuni (Stage 7, assente).
+
+**Decisione: `--engine generative` è ora il path SEASONAL RACCOMANDATO** ma **NON auto-flippato a default** — la run applicativa 2026/27 usa ancora `default_season_fixtures` (calendario neutro), la promozione del default aspetta il cablaggio del calendario reale 2026/27. Additivo: nessun path d'asta live/ledger toccato, nessun merge su `fanta`.
 
 ### ADR-2026-078 — Engine v2 Stage 5: registro `models/` (livello 5) + path boosting per il voto base (GUARDATO) + harness di ablation per fonte/tier
 

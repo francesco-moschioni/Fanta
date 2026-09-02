@@ -89,13 +89,16 @@ def test_degradation_regression_matches_bootstrap_scaled_by_participation():
 
 def test_keeper_appearance_count_via_season():
     pp, rp = _pools()
+    # A realistic nailed #1 (observed rate ~0.95): plays almost the whole season,
+    # low variance. The KEEPER_NAILED designation floors the rate at 0.90, so a
+    # misclassification is no longer catastrophic (was a flat 0.97).
     cfg = GenerativeConfig(
-        role="P", participation=PlayerSeasonParticipation(0.5, keeper_status=KEEPER_NAILED),
+        role="P", participation=PlayerSeasonParticipation(0.95, keeper_status=KEEPER_NAILED),
         player_pools=pp, role_pools={"P": rp["D"]},  # reuse D pool shape as a stand-in
     )
     res = simulate_season(999, cfg, n_sims=400, base_seed=42)
-    assert 36.0 <= res.expected_appearances <= 38.0
-    assert res.appearance_counts.std() < 2.0
+    assert 35.0 <= res.expected_appearances <= 38.0
+    assert res.appearance_counts.std() < 2.5
 
 
 def test_shared_scoreline_couples_teammates():
