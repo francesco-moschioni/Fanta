@@ -172,7 +172,14 @@ def _add_player(code: int, fallback_role_code: str | None = None) -> None:
             sim_mean=float(row["sim_mean"]),
             p10=float(row["sim_p10"]),
             p90=float(row["sim_p90"]),
-            p_vote=float(row["participation_rate"]),
+            # participation_rate is NaN/None for new signings with no Serie A
+            # history -- show it as unknown rather than "nan%".
+            p_vote=(
+                float(row["participation_rate"])
+                if row["participation_rate"] is not None
+                and float(row["participation_rate"]) == float(row["participation_rate"])
+                else float("nan")
+            ),
             display_name=str(row["display_name"]),
             data_quality_tier=str(row["data_quality_tier"]),
         )
@@ -246,7 +253,7 @@ def _render_lineup(res) -> None:
                 "E[punti]": round(s.sim_mean, 2),
                 "Floor (p10)": round(s.p10, 2),
                 "Ceiling (p90)": round(s.p90, 2),
-                "Prob. voto": f"{s.p_vote:.0%}",
+                "Prob. voto": "n/d" if s.p_vote != s.p_vote else f"{s.p_vote:.0%}",
                 "Rischio SV": "⚠️" if s.player_code in flagged else "",
                 "Qualità dati": s.data_quality_tier,
             }
