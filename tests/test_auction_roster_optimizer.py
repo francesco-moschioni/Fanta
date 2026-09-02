@@ -96,6 +96,29 @@ class TestOptimizeRosterCompletion:
         result = optimize_roster_completion(candidates, {"D": 1}, budget=100)
         assert not result.candidate_pool_capped
 
+    def test_value_col_default_reproduces_var_mean(self):
+        candidates = [
+            Candidate(player_code=1, role="D", var_mean=5.0, cost=10),
+            Candidate(player_code=2, role="D", var_mean=3.0, cost=5),
+            Candidate(player_code=3, role="A", var_mean=4.0, cost=6),
+        ]
+        base = optimize_roster_completion(candidates, {"D": 1, "A": 1}, budget=20)
+        explicit = optimize_roster_completion(
+            candidates, {"D": 1, "A": 1}, budget=20, value_col="var_mean"
+        )
+        assert base == explicit
+
+    def test_value_fn_hook_changes_objective(self):
+        # value_fn ranks by cost instead of var_mean -> picks the pricier D
+        candidates = [
+            Candidate(player_code=1, role="D", var_mean=9.0, cost=1),
+            Candidate(player_code=2, role="D", var_mean=1.0, cost=8),
+        ]
+        res = optimize_roster_completion(
+            candidates, {"D": 1}, budget=100, value_fn=lambda c: float(c.cost)
+        )
+        assert [c.player_code for c in res.selected] == [2]
+
     def test_negative_var_slot_is_left_unfilled_rather_than_hurt_total_var(self):
         # The objective is "maximize total VAR", not "always fill every slot
         # regardless of quality" -- leaving a needed slot unfilled (total VAR

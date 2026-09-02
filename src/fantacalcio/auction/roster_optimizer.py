@@ -72,9 +72,21 @@ def optimize_roster_completion(
     candidates: list[Candidate],
     role_slots_needed: dict[str, int],
     budget: int,
+    *,
+    value_col: str = "var_mean",
+    value_fn=None,
 ) -> OptimizationResult:
     """Exact 0/1 knapsack over the (capped) candidate pool, respecting
-    per-role slot caps in `role_slots_needed` and total `budget`."""
+    per-role slot caps in `role_slots_needed` and total `budget`.
+
+    `value_col` (default ``"var_mean"``) / `value_fn` (a ``Candidate -> float``
+    override) select which per-candidate quantity is maximised -- Stage 6
+    (ADR-2026-076) passes a risk-adjusted VAR here. The DP is otherwise
+    unchanged; the default reproduces the historical behaviour exactly."""
+
+    def _val(c: Candidate) -> float:
+        return float(value_fn(c)) if value_fn is not None else float(getattr(c, value_col))
+
     if budget < 0:
         raise RosterOptimizerError(f"budget must be >= 0, got {budget}")
     for role, need in role_slots_needed.items():
@@ -88,7 +100,7 @@ def optimize_roster_completion(
     trimmed: list[Candidate] = []
     capped = False
     for role in roles:
-        role_candidates = sorted((c for c in candidates if c.role == role), key=lambda c: c.var_mean, reverse=True)
+        role_candidates = sorted((c for c in candidates if c.role == role), key=_val, reverse=True)
         if len(role_candidates) > TOP_N_PER_ROLE:
             capped = True
         trimmed.extend(role_candidates[:TOP_N_PER_ROLE])
@@ -109,7 +121,7 @@ def optimize_roster_completion(
                 continue
             new_counts = tuple(v + 1 if i == role_idx else v for i, v in enumerate(counts))
             new_state = (new_budget, new_counts)
-            candidate_var = total_var + c.var_mean
+            candidate_var = total_var + _val(c)
             if candidate_var > best.get(new_state, -1.0):
                 best[new_state] = candidate_var
                 choice[new_state] = choice[state] + (idx,)

@@ -33,9 +33,12 @@ exactly what's actually been assigned so far.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 import pandas as pd
+
+CLEARING_BUFFER = 1  # small overpay buffer added to the expected clearing price ceiling
 
 from ..config import Ruleset, evaluate_budget_expr
 from ..domain import LeagueState, Role as DomainRole, TeamState
@@ -97,6 +100,10 @@ class MaxBidRecommendation:
     competition_teams_total: int | None = None
     competition_avg_budget_per_slot: float | None = None
     explanation: tuple[str, ...] = ()
+    # Stage 6 (ADR-2026-076), all optional -- None / "" unless a Stage 6 arg was passed.
+    shadow_price_ceiling: int | None = None  # value/lambda* ceiling from the budget shadow price
+    clearing_price_ceiling: int | None = None  # expected clearing price + buffer (opponent demand)
+    binding_constraint: str = ""  # which cap set the final max_bid, when Stage 6 was active
 
 
 def recommend_max_bid(
@@ -112,6 +119,12 @@ def recommend_max_bid(
     player_conn=None,
     all_events: list | None = None,
     opponent_ids: list[str] | None = None,
+    shadow_price=None,
+    risk_aversion: float = 0.0,
+    opponent_demand: float | None = None,
+    clearing_form_params: dict | None = None,
+    target_player_var_samples=None,
+    risk_cvar_alpha: float = 0.10,
 ) -> MaxBidRecommendation:
     """`undrafted_pool` must have columns player_code, var_mean, and cover the same
     role/round pool as the target player -- callers are responsible for pre-
@@ -225,6 +238,85 @@ def recommend_max_bid(
             "nel prezzo qui sopra)."
         )
 
+    # --- Stage 6 (ADR-2026-076): shadow-price / risk / opponent-demand caps ---
+    # Entirely skipped (byte-identical output) unless a Stage 6 arg was passed.
+    shadow_price_ceiling: int | None = None
+    clearing_price_ceiling: int | None = None
+    binding_constraint = ""
+    if shadow_price is not None or opponent_demand is not None or risk_aversion:
+        value_term = float(target_player_var)
+        if risk_aversion:
+            if target_player_var_samples is not None:
+                import numpy as _np
+
+                from .risk_profile import cvar as _cvar
+                from .risk_profile import risk_adjusted_objective as _rao
+
+                _s = _np.asarray(target_player_var_samples, dtype=float)
+                value_term = _rao(float(_s.mean()), _cvar(_s, risk_cvar_alpha), risk_aversion)
+                explanation.append(
+                    f"Profilo di rischio (rho={risk_aversion:.2f}, CVaR al {risk_cvar_alpha:.0%}, "
+                    f"fonte: risk_profile.risk_adjusted_objective su campioni Monte Carlo del "
+                    f"giocatore): VAR aggiustata per il rischio = {value_term:.2f}"
+                )
+            else:
+                explanation.append(
+                    f"Profilo di rischio richiesto (rho={risk_aversion:.2f}) ma nessun campione "
+                    "del giocatore fornito: valore non aggiustato."
+                )
+
+        _anchor = locals().get("target_quotazione", None)
+        if opponent_demand is not None:
+            from .opponent_demand_price import DEFAULT_CLEARING_FORM, expected_clearing_price
+
+            _params = {**DEFAULT_CLEARING_FORM, **(clearing_form_params or {})}
+            anchor = _anchor if _anchor else base_bid
+            _ecp = expected_clearing_price(
+                anchor,
+                demand_pressure=float(opponent_demand),
+                role_inflation=_params.get("role_inflation", 1.0),
+                g_max=_params.get("g_max", 2.5),
+                kappa=_params.get("kappa", 0.6),
+                d0=_params.get("d0", 0.0),
+            )
+            clearing_price_ceiling = max(1, int(math.ceil(_ecp)) + CLEARING_BUFFER)
+            explanation.append(
+                f"Prezzo di aggiudicazione atteso (fonte: opponent_demand_price."
+                f"expected_clearing_price; domanda avversari D={opponent_demand:.2f}, ancora="
+                f"{anchor}) = {_ecp:.1f} -> tetto con margine +{CLEARING_BUFFER} = "
+                f"{clearing_price_ceiling}"
+            )
+
+        caps: dict[str, int] = {"budget residuo": remaining_budget}
+        _value_replaces_dollar_rule = (
+            shadow_price is not None and shadow_price.binding and shadow_price.lambda_star > 0
+        )
+        if shadow_price is not None:
+            if _value_replaces_dollar_rule:
+                from .budget_shadow_price import max_bid_from_shadow_price
+
+                shadow_price_ceiling = max_bid_from_shadow_price(value_term, shadow_price.lambda_star)
+                caps["prezzo ombra del budget"] = shadow_price_ceiling
+                explanation.append(
+                    f"Prezzo ombra del budget lambda*={shadow_price.lambda_star:.4f} VAR/credito "
+                    f"(fonte: budget_shadow_price.budget_shadow_price): tetto di valore = "
+                    f"{value_term:.2f} / {shadow_price.lambda_star:.4f} = {shadow_price_ceiling}"
+                )
+            else:
+                explanation.append(
+                    "Prezzo ombra del budget: budget NON vincolante (lambda*=0) -> nessun "
+                    "costo-opportunita', resta valida la regola dollar/$1 gia' calcolata."
+                )
+        if clearing_price_ceiling is not None:
+            caps["prezzo di aggiudicazione"] = clearing_price_ceiling
+        if not _value_replaces_dollar_rule:
+            caps["valore (regola dollar)"] = max_bid
+
+        final = min(caps.values())
+        binding_constraint = min(caps, key=lambda k: caps[k])
+        max_bid = max(1, min(final, remaining_budget))
+        explanation.append(f"Vincolo attivo (Stage 6): {binding_constraint}")
+
     explanation.append(f"Massimo consigliato finale: {max_bid}")
 
     return MaxBidRecommendation(
@@ -247,4 +339,7 @@ def recommend_max_bid(
         competition_teams_total=competition_total,
         competition_avg_budget_per_slot=competition_avg_budget,
         explanation=tuple(explanation),
+        shadow_price_ceiling=shadow_price_ceiling,
+        clearing_price_ceiling=clearing_price_ceiling,
+        binding_constraint=binding_constraint,
     )

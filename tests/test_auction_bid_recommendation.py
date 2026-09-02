@@ -210,3 +210,117 @@ class TestMarketContext:
         assert rec.competition_teams_needing == 2  # neither has bought anything yet
         assert rec.max_bid == rec.base_bid  # competition never changes the price
         assert any("Concorrenza stimata" in line for line in rec.explanation)
+
+
+class TestStage6:
+    def _snap(self, rec):
+        return (
+            rec.base_bid,
+            rec.max_bid,
+            rec.var_share,
+            rec.discretionary_budget,
+            rec.reserve_for_other_slots,
+            rec.explanation,
+        )
+
+    def test_regression_no_new_args_byte_identical(self, ruleset):
+        state = replay(ruleset, [])
+        pool = _pool([(1, 5.0), (2, 1.0), (3, 0.5)])
+        for code, var in [(1, 5.0), (2, 1.0), (3, 0.5)]:
+            rec = recommend_max_bid(state, ruleset, "team-01", "G1", code, var, pool)
+            # Stage 6 fields untouched
+            assert rec.shadow_price_ceiling is None
+            assert rec.clearing_price_ceiling is None
+            assert rec.binding_constraint == ""
+            assert "Stage 6" not in " ".join(rec.explanation)
+            # nothing after "Massimo consigliato finale" was inserted before it
+            assert rec.explanation[-1].startswith("Massimo consigliato finale")
+
+    def test_shadow_price_binding_caps_value(self, ruleset):
+        from fantacalcio.auction.budget_shadow_price import ShadowPriceResult
+
+        state = replay(ruleset, [])
+        pool = _pool([(1, 100.0)])
+        sp = ShadowPriceResult(
+            lambda_star=10.0, binding=True, implied_roster=(1,), duality_gap_estimate=0.0
+        )
+        rec = recommend_max_bid(
+            state, ruleset, "team-01", "G1", 1, 100.0, pool, shadow_price=sp
+        )
+        # value ceiling = ceil(100 / 10) = 10
+        assert rec.shadow_price_ceiling == 10
+        assert rec.max_bid == 10
+        assert rec.binding_constraint == "prezzo ombra del budget"
+        assert rec.max_bid <= rec.remaining_budget
+
+    def test_non_binding_shadow_price_keeps_dollar_rule(self, ruleset):
+        from fantacalcio.auction.budget_shadow_price import ShadowPriceResult
+
+        state = replay(ruleset, [])
+        pool = _pool([(1, 5.0), (2, 1.0)])
+        base = recommend_max_bid(state, ruleset, "team-01", "G1", 1, 5.0, pool)
+        sp = ShadowPriceResult(
+            lambda_star=0.0, binding=False, implied_roster=(0,), duality_gap_estimate=0.0
+        )
+        rec = recommend_max_bid(
+            state, ruleset, "team-01", "G1", 1, 5.0, pool, shadow_price=sp
+        )
+        assert rec.shadow_price_ceiling is None
+        assert rec.max_bid == base.base_bid
+
+    def test_opponent_demand_caps_bid_and_never_exceeds_budget(self, ruleset):
+        state = replay(ruleset, [])
+        pool = _pool([(1, 100.0)])
+        rec = recommend_max_bid(
+            state, ruleset, "team-01", "G1", 1, 100.0, pool, opponent_demand=3.0
+        )
+        assert rec.clearing_price_ceiling is not None
+        assert rec.max_bid <= rec.clearing_price_ceiling
+        assert rec.max_bid <= rec.remaining_budget
+        assert rec.max_bid >= 1
+
+    def test_risk_aversion_lowers_value_with_samples(self, ruleset):
+        import numpy as np
+
+        from fantacalcio.auction.budget_shadow_price import ShadowPriceResult
+
+        state = replay(ruleset, [])
+        pool = _pool([(1, 20.0)])
+        sp = ShadowPriceResult(
+            lambda_star=1.0, binding=True, implied_roster=(1,), duality_gap_estimate=0.0
+        )
+        rng = np.random.default_rng(1)
+        samples = rng.normal(loc=20.0, scale=8.0, size=4000)
+        rec_plain = recommend_max_bid(
+            state, ruleset, "team-01", "G1", 1, 20.0, pool, shadow_price=sp
+        )
+        rec_risk = recommend_max_bid(
+            state, ruleset, "team-01", "G1", 1, 20.0, pool, shadow_price=sp,
+            risk_aversion=0.6, target_player_var_samples=samples,
+        )
+        assert rec_risk.shadow_price_ceiling < rec_plain.shadow_price_ceiling
+
+    def test_replay_style_capped_recommendation_respects_ledger(self, ruleset):
+        from fantacalcio.auction.budget_shadow_price import ShadowPriceResult
+
+        events = [
+            AssignmentEvent(
+                event_id="e1", ts="t", round_id="G1", team_id="team-02",
+                pool_id="defenders_top_1_60", role=Role.DEF,
+                item=AssignmentItem(player_ids=("2",)), amount=40,
+                source="test", author="test",
+            )
+        ]
+        state = replay(ruleset, events)
+        pool = _pool([(1, 50.0), (2, 50.0)])
+        sp = ShadowPriceResult(
+            lambda_star=5.0, binding=True, implied_roster=(1,), duality_gap_estimate=0.0
+        )
+        # player 2 is assigned -> must be rejected from the pool
+        with pytest.raises(BidRecommendationError):
+            recommend_max_bid(state, ruleset, "team-01", "G1", 2, 50.0, pool, shadow_price=sp)
+        rec = recommend_max_bid(
+            state, ruleset, "team-01", "G1", 1, 50.0, pool, shadow_price=sp, opponent_demand=2.0
+        )
+        assert rec.max_bid <= rec.remaining_budget
+        assert rec.max_bid >= 1
