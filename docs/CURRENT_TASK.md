@@ -46,7 +46,7 @@ Compilare prima di ogni modifica significativa e mantenere lo scope a una singol
 - Gate/lavori deferiti che richiedono input esterni:
   - Stage 2 P-regression → rieseguire il backtest odds con il sotto-modello portiere dello Stage 4 (target conceded-pmf sbagliato per i portieri).
   - Stage 3 gate → serve un export Understat reale.
-  - Stage 4 gate (CRPS/coverage stagionale rolling-origin) → **eseguito 2026-09-02 su stagioni concluse con calendari reali football-data.co.uk: FAIL** (addendum ADR-2026-077, report `_stage4_generative_backtest.md`). Da ripetere quando arriva il calendario 2026/27 reale e con un input di partecipazione più forte (multi-stagione / regressivo verso la media di ruolo; soglia portiere nailed/backup continua).
+  - Stage 4 gate (CRPS/coverage stagionale rolling-origin) → **rieseguito 2026-09-02 (seconda passata): PASS 7/7** dopo il fix del sotto-modello portiere + partecipazione multi-stagione (addendum ADR-2026-077). `--engine generative` è ora il path seasonal raccomandato ma **non** auto-flippato a default. Il calendario reale 2026/27 (OpenFootball) è ora cablato in `part_b_generative` (terza passata dell'addendum, `scoring/generative/calendar.py`, commit `e8e1a20`) — il backtest resta su stagioni concluse e non è toccato. Rimane aperto solo un input di partecipazione ancora più forte / feed infortuni (Stage 7).
   - Stage 5 → `pip install '.[ml]'` (scikit-learn, lightgbm) su macchina con rete, poi `run_base_voto_model` + `run_model_ablation` + decisione `beats_baseline`.
   - Stage 6 → sign-off esplicito per abilitare la domanda avversaria nel prezzo (reversal di ADR-2026-057).
   - Stage 7 spike VAEP → `pip install socceraction` su macchina con rete, script scratchpad, risultato in ADR di follow-up.
