@@ -59,8 +59,13 @@ Gate: miglioramento OOS e nel replay decisionale; nessuna personalizzazione fort
 
 ## M6 — Post-asta
 
-- formazione settimanale, capitano e panchina;
-- sostituzioni/no-switch e bonus congiunti;
+- formazione settimanale, capitano e panchina; **iniziato** (ADR-2026-080): package puro
+  `src/fantacalcio/lineup/` (formations, risk_profile, optimizer XI, modifier storico, captain,
+  bench, sv_risk) + pagina `app/pages/8_⚽_Formazione.py`. Modificatore difesa e bonus capitano
+  restano NON ratificati: modificatore solo dietro toggle opt-in con disclaimer, mai in config;
+  capitano = "punteggio atteso più alto".
+- sostituzioni/no-switch e bonus congiunti; parziale: `bench.order_bench` copre "max 5
+  sostituzioni, no switch" (ordine panchina), i bonus congiunti restano bloccati (OPEN_QUESTIONS).
 - regret analysis e storico decisioni;
 - NLP news solo da fonti autorizzate se aggiunge valore.
 
