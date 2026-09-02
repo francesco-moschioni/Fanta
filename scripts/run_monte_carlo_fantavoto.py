@@ -43,6 +43,7 @@ from fantacalcio.scoring.generative import (
     default_season_fixtures,
     simulate_season,
 )
+from fantacalcio.scoring.generative.calendar import load_season_fixtures
 from fantacalcio.modeling.participation import (
     compute_season_participation,
     decayed_participation_estimate,
@@ -403,7 +404,18 @@ def part_b_generative(rated: pd.DataFrame, voti: pd.DataFrame, *, use_availabili
     )["decayed_participation_rate"]
 
     listone = pd.read_csv(QUOTAZIONI_DIR / "2026_27.csv")
-    fixtures = default_season_fixtures()
+    # Stage 4 follow-up (ADR-2026-077 addendum 2026-09-02): real per-club 2026/27
+    # calendar from the staged OpenFootball fixtures, so each player's season is
+    # simulated over that club's actual 38-game home/away pattern. Falls back to
+    # the neutral 38-fixture stand-in per club if the calendar is missing.
+    try:
+        season_fixtures = load_season_fixtures("2026-27")
+        print(f"calendar: OpenFootball 2026-27 fixtures for {len(season_fixtures)} clubs.")
+    except (FileNotFoundError, KeyError, ValueError) as exc:
+        season_fixtures = {}
+        print(f"calendar: staged OpenFootball 2026-27 unavailable ({exc}); "
+              "using neutral default_season_fixtures() for all clubs.")
+    default_fixtures = default_season_fixtures()
 
     # Stage 7 (ADR-2026-079): next-matchday availability cap from a manually
     # imported WhoScored feed. DEFAULT OFF; absent feed -> {} -> byte-identical.
@@ -432,6 +444,7 @@ def part_b_generative(rated: pd.DataFrame, voti: pd.DataFrame, *, use_availabili
         fmp = None
         if code in avail_map:
             fmp = apply_availability_to_participation(cfg.participation, avail_map[code])
+        fixtures = season_fixtures.get(str(r.team_name), default_fixtures)
         res = simulate_season(
             code, cfg, fixtures, n_sims=N_SEASON_SIMS, base_seed=SEED,
             first_md_participation=fmp,

@@ -933,6 +933,18 @@ Risultati seconda passata (stesso campione 640 player-season, 500 sim, seed 42):
 
 **Decisione: `--engine generative` è ora il path SEASONAL RACCOMANDATO** ma **NON auto-flippato a default** — la run applicativa 2026/27 usa ancora `default_season_fixtures` (calendario neutro), la promozione del default aspetta il cablaggio del calendario reale 2026/27. Additivo: nessun path d'asta live/ledger toccato, nessun merge su `fanta`.
 
+#### Addendum 2026-09-02 (terza passata) — calendario reale 2026/27 cablato
+
+Il follow-up "calendario reale 2026/27" della seconda passata è stato chiuso.
+
+- **Dati**: `ingest.openfootball.fetch_season("2026-27")` → `data/staged/openfootball/serie_a_2026-27.csv` (fonte CC0 già registrata come "produzione"; 380 match, 20 giocati, 360 da giocare, range 2026-08-22 → 2027-05-30).
+- **Nuovo modulo** `src/fantacalcio/scoring/generative/calendar.py` — puro e offline (legge solo il CSV staged): `load_season_fixtures("2026-27")` → `{club: [Fixture(matchday, is_home), …]}`, ordinato per giornata, con tabella alias esplicita dei 20 club (un nome non riconosciuto è un `KeyError` rumoroso, non un buco silenzioso); valida il girone completo (38 partite, 19 in casa) per ogni club.
+- **Cablaggio**: `scripts/run_monte_carlo_fantavoto.py::part_b_generative` ora simula ogni giocatore sul calendario effettivo del suo club (pattern casa/trasferta reale, quindi il termine di conteggio `Var[N]` non è più uniforme tra i club); fallback per-club a `default_season_fixtures()` se il calendario manca. Nessun cambio al backtest dello Stage 4 (`run_stage4_generative_backtest.py` usa stagioni concluse con liste partite da football-data.co.uk — non toccato, gate resta PASS 7/7).
+- **Test**: `tests/test_generative_calendar.py` (girone completo per club, coerenza casa/trasferta tra le due squadre, club sconosciuto → `KeyError`, calendario mancante → `FileNotFoundError`).
+- **`opponent_strength` / `team_prior` restano neutri** in questo modulo: i priori da quote / Dixon-Coles sono uno strato separato (Stage 2), assente per il 2026/27 pre-season.
+
+Il default resta `--engine bootstrap` finché non si decide la promozione; questo addendum rimuove solo la clausola "aspetta il calendario reale".
+
 ### ADR-2026-078 — Engine v2 Stage 5: registro `models/` (livello 5) + path boosting per il voto base (GUARDATO) + harness di ablation per fonte/tier
 
 - Data: 2026-09-02
