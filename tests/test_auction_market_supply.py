@@ -7,7 +7,7 @@ from fantacalcio.config import RosterComposition, Round, Ruleset
 def _ruleset(teams=2, forwards=2, goalkeeper_block_size=2):
     return Ruleset(
         schema_version=1, ruleset_id="test", status="working_current", effective_from="2026-01-01",
-        teams=teams, custom_logo_bonus_credits=3,
+        teams=teams, custom_logo_bonus_credits=3, max_releases_per_team=5,
         roster=RosterComposition(
             total_players=4 + forwards, goalkeeper_block_size=goalkeeper_block_size, goalkeeper_same_club=True,
             defenders=1, midfielders=1, forwards=forwards, forwards_fallback=1,

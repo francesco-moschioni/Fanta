@@ -48,6 +48,7 @@ def _minimal_valid_yaml(**overrides: str) -> str:
     league:
       teams: 2
       custom_logo_bonus_credits: 3
+      max_releases_per_team: 5
       roster:
         total_players: 4
         goalkeeper_block:

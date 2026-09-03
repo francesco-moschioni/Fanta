@@ -48,6 +48,7 @@ class Ruleset:
     effective_from: str
     teams: int
     custom_logo_bonus_credits: int
+    max_releases_per_team: int
     roster: RosterComposition
     formations: tuple[str, ...]
     list_states: tuple[str, ...]
@@ -208,6 +209,7 @@ def load_ruleset(path: str | Path) -> Ruleset:
         effective_from=str(_require(raw, "effective_from", "root")),
         teams=_require(league, "teams", "league"),
         custom_logo_bonus_credits=_require(league, "custom_logo_bonus_credits", "league"),
+        max_releases_per_team=_require(league, "max_releases_per_team", "league"),
         roster=roster,
         formations=formations,
         list_states=list_states,

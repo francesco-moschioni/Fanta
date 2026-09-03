@@ -69,6 +69,16 @@ class AssignmentEvent:
     source: str
     author: str
     corrects: str | None = None  # event_id this one supersedes, if any
+    # Positional roster slot this purchase consumed, when it differs from the
+    # scoring `role`. The league roster is positional (3 GK / 8 DEF / 8 MID /
+    # 4 FWD): a player can be drafted into a slot of a different role than the
+    # one used to score them -- e.g. Isaksen / Rodriguez Je. (`role=MID` for
+    # scoring, ADR-2026-068) drafted from the forwards band, so occupying a FWD
+    # slot. `replay()` counts the per-role slot caps against `slot_role or role`
+    # while still filing the player under the scoring `role` in the roster, so
+    # downstream (lineup, market model) sees the real playing role. `None` ==
+    # slot_role equals role (the common case). ADR-2026-082.
+    slot_role: "Role | None" = None
 
 
 @dataclass(frozen=True)
@@ -190,6 +200,12 @@ def replay(ruleset: Ruleset, events: list[Event]) -> LeagueState:
         Role.MID: ruleset.roster.midfielders,
         Role.FWD: ruleset.roster.forwards,
     }
+    # Per-team count of positional slots consumed, per role. Keyed on
+    # `slot_role or role` (see AssignmentEvent.slot_role): a player scored as a
+    # MID but drafted into a FWD slot counts against FWD here while still being
+    # filed under MID in `team.roster`. This is what the per-role caps check, so
+    # a cross-role draft can't push `team.roster[role]` past its nominal cap.
+    slot_counts_per_team: dict[str, dict[Role, int]] = {}
 
     last_round_order_seen = 0
     for event in events:
@@ -316,13 +332,16 @@ def replay(ruleset: Ruleset, events: list[Event]) -> LeagueState:
                 )
             (pid,) = event.item.player_ids
             role = event.role
-            cap = max_role_counts.get(role)
-            if cap is not None and team.role_count(role) >= cap:
+            slot_role = event.slot_role or role
+            cap = max_role_counts.get(slot_role)
+            slot_counts = slot_counts_per_team.setdefault(event.team_id, {})
+            if cap is not None and slot_counts.get(slot_role, 0) >= cap:
                 raise DomainError(
                     f"Event {event.event_id}: team {event.team_id} already has {cap} "
-                    f"players in role {role.value}"
+                    f"players in role {slot_role.value}"
                 )
             team.roster[role].append(pid)
+            slot_counts[slot_role] = slot_counts.get(slot_role, 0) + 1
 
         budget.spent += event.amount
         state.assigned_players.update(event.item.player_ids)

@@ -82,6 +82,19 @@ _ROLE_MAP = {"P": Role.GK, "D": Role.DEF, "C": Role.MID, "A": Role.FWD}
 _TS = datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
+def _positional_roles(n_slots: int, ruleset) -> list[Role]:
+    """The roster grid is positional: the first `goalkeeper_block_size` rows are
+    the keeper block, then `defenders`, then `midfielders`, then whatever is left
+    are the forward slots (the league runs the `forwards_fallback` 4-forward
+    roster, not the nominal 5). Returns one Role per slot, in grid order."""
+    r = ruleset.roster
+    gk, d, m = r.goalkeeper_block_size, r.defenders, r.midfielders
+    fwd = n_slots - gk - d - m
+    if fwd < 1:
+        raise SystemExit(f"roster block sizes don't fit {n_slots} slots (gk{gk} d{d} m{m})")
+    return [Role.GK] * gk + [Role.DEF] * d + [Role.MID] * m + [Role.FWD] * fwd
+
+
 def _norm(s: str) -> str:
     s = unicodedata.normalize("NFKD", str(s)).encode("ascii", "ignore").decode()
     return s.lower().replace(".", "").replace("'", " ").replace("-", " ").split("*")[0].strip()
@@ -169,10 +182,14 @@ def main() -> int:
     eff_state = replay(ruleset, effective_events(existing))
     owned: dict[str, set[str]] = collections.defaultdict(set)
     gk_block_event: dict[str, tuple[str, int]] = {}
+    orig_event_by_code: dict[str, dict[str, AssignmentEvent]] = collections.defaultdict(dict)
     for ev in existing:
         if isinstance(ev, AssignmentEvent):
             for pid in ev.item.player_ids:
-                owned[ev.team_id].add(NEGATIVE_ALIAS.get(pid, pid))
+                aliased = NEGATIVE_ALIAS.get(pid, pid)
+                owned[ev.team_id].add(aliased)
+                if ev.role is not Role.GK:
+                    orig_event_by_code[ev.team_id][aliased] = ev
             if ev.role is Role.GK:
                 gk_block_event[ev.team_id] = (ev.event_id, ev.amount)
     remaining_g2 = {
@@ -193,15 +210,18 @@ def main() -> int:
         if args.only_team and tid != args.only_team:
             continue
 
-        resolved: dict[str, str] = {}  # code -> role_letter
+        resolved: dict[str, str] = {}  # code -> role_letter (scoring role, listone)
         roster_gk: list[str] = []
-        for slot in slots:
+        pos_roles = _positional_roles(len(slots), ruleset)
+        slot_role_by_code: dict[str, Role] = {}  # code -> positional roster slot
+        for i, slot in enumerate(slots):
             r = _resolve_player(slot.display_name, idx)
             if r is None:
                 errors.append(f"[{team_name}] unresolved: {slot.display_name!r} ({slot.cost}cr)")
                 continue
             code, role = r
             resolved[code] = role
+            slot_role_by_code[code] = pos_roles[i]
             if role == "P":
                 roster_gk.append(code)
 
@@ -239,6 +259,56 @@ def main() -> int:
                 author=AUTHOR,
             ))
 
+        # 1b. owned outfield players sitting in a slot of a different role than
+        # their scoring role (Isaksen / Rodriguez Je. type, ADR-2026-068/082):
+        # supersede the original G1/G2 event so replay counts the positional
+        # slot, not the scoring role, against the per-role cap. The correction is
+        # recorded in G3 (that is when the roster actually settled, and `replay`
+        # forbids a G1/G2 event appended after G3 ones already exist); `corrects`
+        # drops the original from the current view, so its cost moves from its
+        # round into G3. We bump this team's `remaining_G2` by the freed amount
+        # so `g3_avail` rises exactly as `g3_spend` does -> gap and total budget
+        # unchanged.
+        g2_refund_from_corrections = 0
+        for code, orig in orig_event_by_code.get(tid, {}).items():
+            slot_role = slot_role_by_code.get(code)
+            if slot_role is None or slot_role is Role.GK or slot_role is orig.role:
+                continue
+            g2_refund_from_corrections += int(orig.amount)
+            g3_spend += int(orig.amount)
+            team_new.append(AssignmentEvent(
+                event_id=uuid.uuid4().hex, ts=_TS, round_id=ROUND_ID, team_id=tid,
+                pool_id=POOL_ID, role=orig.role,
+                item=AssignmentItem(player_ids=tuple(orig.item.player_ids)),
+                amount=int(orig.amount), source=SOURCE, author=AUTHOR,
+                corrects=orig.event_id, slot_role=slot_role,
+            ))
+
+        # 1c. released players: owned outfield (non-GK) codes no longer on the
+        # team's roster in the export -> the team svincolo'd them before
+        # riparazione. A VoidEvent drops the original assignment from the current
+        # view: the player leaves the roster and the credits paid come back
+        # (admin rule 2026-09-02: "recuperate la spesa fatta"). Keeper-block
+        # swaps are handled in step 1, not here. `*` players are still on the
+        # roster (kept, flagged left_serie_a) so they never reach this branch.
+        released = [
+            (code, orig)
+            for code, orig in orig_event_by_code.get(tid, {}).items()
+            if code not in resolved
+        ]
+        if len(released) > ruleset.max_releases_per_team:
+            errors.append(
+                f"[{team_name}] {len(released)} svincoli > max "
+                f"{ruleset.max_releases_per_team}: {[c for c, _ in released]}"
+            )
+        for code, orig in released:
+            g2_refund_from_corrections += int(orig.amount)  # frees budget into remaining_G2
+            team_new.append(VoidEvent(
+                event_id=uuid.uuid4().hex, ts=_TS, voids=orig.event_id, author=AUTHOR,
+                reason="lega_roster_reconciliation: giocatore svincolato prima della riparazione "
+                       f"(rimborso {orig.amount}cr, spesa pagata)",
+            ))
+
         # 2. new outfield players
         cost_by_code = {}
         for slot in slots:
@@ -252,17 +322,20 @@ def main() -> int:
                 continue
             cost = cost_by_code.get(code, 1)
             g3_spend += cost
+            scoring_role = _ROLE_MAP[role]
+            slot_role = slot_role_by_code.get(code)
             team_new.append(AssignmentEvent(
                 event_id=uuid.uuid4().hex, ts=_TS, round_id=ROUND_ID, team_id=tid,
-                pool_id=POOL_ID, role=_ROLE_MAP[role],
+                pool_id=POOL_ID, role=scoring_role,
                 item=AssignmentItem(player_ids=(code,)),
                 amount=cost, source=SOURCE, author=AUTHOR, corrects=None,
+                slot_role=slot_role if slot_role is not None and slot_role is not scoring_role else None,
             ))
 
         # 3. budget-gap adjustment (the honest total spend exceeds remaining_G2 + 40)
         g3_avail = evaluate_budget_expr(
             next(r for r in ruleset.rounds if r.id == "G3").budget_available_expr,
-            {"G2": remaining_g2.get(tid, 0)},
+            {"G2": remaining_g2.get(tid, 0) + g2_refund_from_corrections},
         )
         gap = g3_spend - g3_avail
         if gap > 0:

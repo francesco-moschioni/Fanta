@@ -23,11 +23,13 @@ Compilare prima di ogni modifica significativa e mantenere lo scope a una singol
 ## Progresso
 
 - Parte 1 (refresh listone): staged CSV `2026_27.csv` (531) + catena MC/m3 rigenerati e verificati. **DuckDB NON rigenerato** (ADR-2026-072 `proposed`): va fatto atomico con la riconciliazione (i 4 codici sintetici `-1..-4` ora hanno codici reali). Resta a 502 giocatori.
-- Parte 2: **parser + dry-run fatti** (`src/fantacalcio/ingest/lega_rosters.py`, `scripts/import_lega_rosters.py`, 4 test). Squadre 20/20 risolte (rinomina `team_05` "Werder Bremer"→"I Have a N'Drim" gestita); giocatori 460/460 risolti (`Tutti`+`Ceduti`+2 fallback GK); 241 assegnazioni G3/G4 candidate. **`replay(existing+new)` FALLISCE** — ADR-2026-073 documenta i 3 limiti del modello (cap ruolo nel replay di audit non annullato da void; nessun evento "singolo portiere di rimpiazzo"; drift codice ledger↔listone). **Nessun evento scritto sul ledger.**
-- Bloccanti per scrivere G3/G4:
-  1. Decisione A/B/C di ADR-2026-073 (probabile: nuovo `ReleaseEvent`, serve comunque alla riparazione).
-  2. Regole admin: budget totale/residuo (spesa 345–369 > 340 crediti freschi config: discrepanza); n° max svincoli + valore crediti.
-- Prossimo (quando sbloccato): decisione dominio → `ReleaseEvent` → import G3/G4 → rebuild DuckDB 531 atomico → export ledger cloud.
+- Parte 2: **COMPLETA** (ADR-2026-081 team_01, poi **ADR-2026-082 tutte e 20**). Sbloccata dalle regole svincolo fornite dall'utente il 2026-09-02 ("5 svincoli max esclusi i `*`, si recupera la spesa fatta") e da `slot_role` nel `replay()`:
+  - `domain.AssignmentEvent.slot_role` (ruolo di slot posizionale ≠ ruolo di punteggio) — il cap per-ruolo si conta contro lo slot, il giocatore resta archiviato nel ruolo di punteggio.
+  - Svincoli = `VoidEvent` sull'assegnazione originale (il rimborso = spesa pagata cade fuori dalla vista corrente). `config: league.max_releases_per_team: 5`.
+  - `scripts/import_lega_rosters.py`: `_positional_roles` deriva lo slot dall'ordine di griglia; emette `corrects`+`slot_role` per i posseduti fuori ruolo, `VoidEvent` per gli svincolati, `slot_role` per i nuovi fuori ruolo.
+  - Scritti **272 eventi** (`--yes`): ledger **213 → 485**. `replay(effective_events)` OK, **20/20 squadre con rosa completa (23)**. 1 solo svincolo outfield reale in lega (`team_08`, un DEF G1 da 12cr). 3 nuovi test dominio/ledger_io + 3 fixture config aggiornate.
+- DuckDB: **nessun rebuild necessario** — la tabella `players` (531) deriva dal listone/MC, non dal ledger; i pochi giocatori `Ceduti` senza riga forecast sono mostrati non schierabili dal tool Formazione (già gestito).
+- Prossimo (non bloccante): export `ledger_export_for_cloud.json` per allineare Streamlit Cloud (azione utente). Round "riparazione" vero e proprio (budget/tie-break/minimo) resta questione admin aperta.
 
 ---
 

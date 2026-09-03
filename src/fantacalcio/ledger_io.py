@@ -33,6 +33,7 @@ def event_to_dict(event: Event) -> dict[str, Any]:
             "source": event.source,
             "author": event.author,
             "corrects": event.corrects,
+            "slot_role": event.slot_role.value if event.slot_role is not None else None,
         }
     if isinstance(event, VoidEvent):
         return {
@@ -75,6 +76,7 @@ def event_from_dict(d: dict[str, Any]) -> Event:
                 source=d["source"],
                 author=d["author"],
                 corrects=d.get("corrects"),
+                slot_role=Role(d["slot_role"]) if d.get("slot_role") is not None else None,
             )
         if kind == "void":
             return VoidEvent(
