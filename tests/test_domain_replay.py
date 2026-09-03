@@ -141,6 +141,66 @@ def test_roster_quota_exceeded_raises(ruleset):
         replay(ruleset, events)
 
 
+def test_slot_role_counts_against_the_positional_slot_not_the_scoring_role(ruleset):
+    """A MID-scored player drafted into a FWD slot (Isaksen type, ADR-2026-082):
+    counts against the FWD cap, is filed under MID in the roster."""
+    events = [
+        _assign(
+            event_id="g1seed", round_id="G1", team_id="team-01",
+            pool_id="goalkeeper_blocks", role=Role.GK,
+            item=AssignmentItem(player_ids=("gk1", "gk2", "gk3")), amount=1,
+        ),
+        _assign(
+            event_id="g2seed", round_id="G2", team_id="team-01",
+            pool_id="midfielders_top_1_20", role=Role.MID,
+            item=AssignmentItem(player_ids=("mid-00",)), amount=1,
+        ),
+    ] + [
+        _assign(
+            event_id=f"m{i}", round_id="G3", team_id="team-01",
+            pool_id="remaining_players", role=Role.MID,
+            item=AssignmentItem(player_ids=(f"mid-{i:02d}",)), amount=1,
+        )
+        for i in range(1, ruleset.roster.midfielders)  # fill the rest of the MID slots
+    ] + [
+        _assign(
+            event_id="x", round_id="G3", team_id="team-01",
+            pool_id="remaining_players", role=Role.MID, slot_role=Role.FWD,
+            item=AssignmentItem(player_ids=("mid-in-fwd-slot",)), amount=1,
+        )
+    ]
+    state = replay(ruleset, events)
+    team = state.team("team-01")
+    assert len(team.roster[Role.MID]) == ruleset.roster.midfielders + 1
+    assert "mid-in-fwd-slot" in team.roster[Role.MID]
+    assert len(team.roster[Role.FWD]) == 0
+
+
+def test_slot_role_still_enforces_its_own_slot_cap(ruleset):
+    events = [
+        _assign(
+            event_id="g1seed2", round_id="G1", team_id="team-01",
+            pool_id="goalkeeper_blocks", role=Role.GK,
+            item=AssignmentItem(player_ids=("gk1", "gk2", "gk3")), amount=1,
+        ),
+        _assign(
+            event_id="g2seed2", round_id="G2", team_id="team-01",
+            pool_id="midfielders_top_1_20", role=Role.MID,
+            item=AssignmentItem(player_ids=("mid-seed",)), amount=1,
+        ),
+    ] + [
+        _assign(
+            event_id=f"f{i}", round_id="G3", team_id="team-01",
+            pool_id="remaining_players",
+            role=Role.MID if i == 0 else Role.FWD, slot_role=Role.FWD,
+            item=AssignmentItem(player_ids=(f"fwd-{i:02d}",)), amount=1,
+        )
+        for i in range(ruleset.roster.forwards + 1)  # one FWD slot over the cap
+    ]
+    with pytest.raises(DomainError, match="already has"):
+        replay(ruleset, events)
+
+
 def test_goalkeeper_block_oversized_raises(ruleset):
     events = [
         _assign(

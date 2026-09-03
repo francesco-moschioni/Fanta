@@ -94,6 +94,22 @@ def _bonus_event() -> BudgetAdjustmentEvent:
     )
 
 
+def test_assignment_slot_role_dict_roundtrip():
+    from fantacalcio.domain import AssignmentEvent, AssignmentItem, Role
+
+    event = AssignmentEvent(
+        event_id="e1", ts="2026-01-01T00:00:00Z", round_id="G3", team_id="team-01",
+        pool_id="remaining_players", role=Role.MID, slot_role=Role.FWD,
+        item=AssignmentItem(player_ids=("p1",)), amount=5, source="t", author="t",
+    )
+    d = event_to_dict(event)
+    assert d["slot_role"] == "FWD"
+    assert event_from_dict(d) == event
+    # absent slot_role (existing ledgers) -> None
+    legacy = {k: v for k, v in d.items() if k != "slot_role"}
+    assert event_from_dict(legacy).slot_role is None
+
+
 def test_budget_adjustment_event_dict_roundtrip():
     event = _bonus_event()
     d = event_to_dict(event)

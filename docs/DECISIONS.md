@@ -1006,3 +1006,15 @@ Il default resta `--engine bootstrap` finché non si decide la promozione; quest
 - Degradazione: nessun cambio a `scoring/engine.py`, `scoring/monte_carlo.py`, `scoring/generative/*`, al ledger o alle pagine esistenti. `scoring/generative/discipline.py::team_defensive_modifier` resta bloccato e **non viene chiamato** (lo strumento calcola la sua stima storica chiaramente etichettata).
 - Conseguenze: nuovo package `src/fantacalcio/lineup/` (`__init__`, `formations`, `risk_profile`, `optimizer`, `modifier`, `captain`, `bench`, `sv_risk`); nuova pagina `app/pages/8_⚽_Formazione.py`. 7 nuovi file di test (`tests/test_lineup_*.py`), **47 nuovi test**, **740 passano, 2 skipped**. Deterministico (top-k per ruolo, tie-break su `player_code`). Nessun merge su `fanta`.
 - Approvato da: project owner (task M6 assegnata)
+
+### ADR-2026-082 — `slot_role` nel dominio + `league.max_releases_per_team` (portato da `fanta`)
+
+- Data: 2026-09-03
+- Stato: approved
+- Scope: domain | config
+- Contesto: su `fanta` la riconciliazione completa delle rose G3/G4 (20/20 squadre) ha richiesto due aggiunte al modello di dominio, condivise con questo ramo perché `domain.py` / `config.py` / `ledger_io.py` sono identici fra i due branch e il tool "Giornata / Formazione" (ADR-2026-080) legge la rosa dal ledger.
+- Decisione (dettaglio completo nell'ADR-2026-082 su `fanta`):
+  - **`AssignmentEvent.slot_role: Role | None`** (default `None`). `replay()` conta i cap per-ruolo contro `slot_role or role` (lo slot posizionale del roster di lega), archiviando comunque il giocatore in `team.roster[role]` (ruolo di punteggio). Un draft cross-ruolo (Isaksen: `role=C`, pescato da Attaccanti — ADR-2026-068) non sfonda più il cap del ruolo di punteggio. Retro-compatibile: assente nei ledger esistenti ⇒ `None`; serializzato in `ledger_io` come stringa opzionale.
+  - **`config: league.max_releases_per_team: 5`** (nuovo campo obbligatorio del `Ruleset`). Regola svincoli asta di riparazione (admin via utente, 2026-09-02): max 5 giocatori, esclusi quelli già fuori Serie A (`*`), rimborso = spesa pagata. Il round "riparazione" completo (budget/tie-break/minimo) resta questione admin aperta e **non** è definito.
+- Conseguenze su questo ramo: `domain.py`, `ledger_io.py`, `config.py`, `config/auction_rules.v1.yaml` allineati a `fanta`; 3 fixture di test config aggiornate + 3 nuovi test (`test_domain_replay.py`, `test_ledger_io.py`). Nessun path Engine v2 toccato. Il file locale `data/local/ledger.sqlite3` (condiviso, gitignored) contiene ora le 20 rose complete, quindi la pagina Formazione su questo ramo le vede.
+- Approvato da: project owner

@@ -8,6 +8,15 @@ source: "Recap regole admin, WhatsApp 2026-08-11 (docs/archive/Recap_regole_asta
 league:
   teams: 20
   currency: credits
+  # Riparazione (asta di riparazione, inizio settembre 2026): before that round a
+  # team may release ("svincolare") at most this many players bought in G1-G4 and
+  # get back exactly the credits they paid for them (confirmed by admin via user,
+  # 2026-09-02: "5 svincoli al max (esclusi i *), recuperate in entrambi casi la
+  # spesa fatta"). Players already out of Serie A (the "*" marker) do not count
+  # against this limit. The riparazione round's own ruleset (budget expression,
+  # tie-breaker, minimum bid) is still an open admin question -- see
+  # docs/OPEN_QUESTIONS.md -- and is NOT defined here yet.
+  max_releases_per_team: 5
   # Postilla admin, 2026-08-11: come lo scorso anno, +3 crediti a ogni squadra che
   # imposta un'immagine/logo personalizzato invece dello stemma di stock Fantacalcio.
   # Applicato per-squadra tramite BudgetAdjustmentEvent (src/fantacalcio/domain.py),
